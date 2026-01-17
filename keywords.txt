@@ -1,0 +1,72 @@
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+SwitchBankHandler	KEYWORD1
+SwitchBank	KEYWORD1
+SwitchBankSnapshot	KEYWORD1
+LatchMode	KEYWORD1
+SwitchBankArduino	KEYWORD1
+Polarity	KEYWORD1
+PinModeCfg	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+# Factories (easy header)
+makeSwitchBankPins	KEYWORD2
+makeSwitchBankCtx	KEYWORD2
+makeSwitchBankPinsMasked	KEYWORD2
+makeSwitchBankCtxMasked	KEYWORD2
+makeSwitchBankPinsCT	KEYWORD2
+makeSwitchBankCtxCT	KEYWORD2
+makeSwitchBankPinsRev	KEYWORD2
+makeSwitchBankCtxRev	KEYWORD2
+SwitchBankBuilder	KEYWORD2
+onCommit	KEYWORD2
+
+# Arduino factory / helpers
+makeSwitchBankArduino	KEYWORD2
+
+# Core APIs
+sync	KEYWORD2
+update	KEYWORD2
+commit	KEYWORD2
+value	KEYWORD2
+peekValue	KEYWORD2
+value8	KEYWORD2
+prevValue	KEYWORD2
+changed	KEYWORD2
+clearChanged	KEYWORD2
+changedMask	KEYWORD2
+risingMask	KEYWORD2
+fallingMask	KEYWORD2
+changedMask8	KEYWORD2
+isOn	KEYWORD2
+rose	KEYWORD2
+fell	KEYWORD2
+size	KEYWORD2
+kSize	KEYWORD2
+snapshot	KEYWORD2
+lastCommitMs	KEYWORD2
+changeCount	KEYWORD2
+setOnCommit	KEYWORD2
+
+# Runtime configuration
+setTimeSource	KEYWORD2
+setMinPollMs	KEYWORD2
+setLatchMode	KEYWORD2
+setDebounceMs	KEYWORD2
+setActiveLowMask	KEYWORD2
+activeLowMask	KEYWORD2
+
+# Mask helpers
+mask_all_active_low	KEYWORD2
+mask_all_active_high	KEYWORD2
+mask_from_active_high_indices	KEYWORD2
+mask_from_active_low_array	KEYWORD2
+
+#######################################
+# Constants / Macros (LITERAL1)
+#######################################
+SWITCHBANK_VERSION	LITERAL1
+SWITCHBANK_ENABLE_COMMIT_CALLBACK	LITERAL1

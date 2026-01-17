@@ -55,16 +55,28 @@ For each bit:
 2. When raw input remains unchanged for `debounce_ms`, **commit** the new state.
 3. Edge helpers (`rose`, `fell`) compare previous vs current committed states.
 
-### Commit
+### Sync vs Commit
 
-A **commit** is the moment a new stable value becomes active.
+SwitchBank intentionally keeps **constructors / factories side-effect free** (no pin reads, no time reads).
+That makes the library more portable and makes README code safer to copy/paste.
 
-Commits happen when:
+> **Rule of thumb:**  
+> Use `sync()` for startup and reconfiguration.  
+> Use `commit()` only when you intentionally want edges _right now_.
 
-- `update()` detects a debounced change, or
-- the user explicitly calls `commit()` to establish a baseline.
+After IO is configured (e.g. after `pinMode(...)` / expander init), call **`sync()` once** to establish a baseline:
 
-Calling `commit()` is recommended once during `setup()`.
+- `sync()` reads the current hardware levels
+- sets `current == previous`
+- clears `changed()`
+- resets per-bit debounce history
+
+A **commit** is different:
+
+- `commit()` reads hardware and commits immediately
+- if the value differs from the current state, it **will** generate edges (`changed/rose/fell`)
+
+In short: use **`sync()` on boot**, use **`commit()` when you intentionally want an immediate commit**.
 
 ---
 
@@ -84,7 +96,7 @@ Uses **`SwitchBank_Arduino.h`**, which:
 #include <SwitchBank_Arduino.h>
 
 // DIP switch pins
-uint8_t DIP_PINS[3] = {25, 26, 27};
+const uint8_t DIP_PINS[3] = {25, 26, 27};
 
 auto dip = makeSwitchBankArduino<3>(
     DIP_PINS,
@@ -96,7 +108,7 @@ auto dip = makeSwitchBankArduino<3>(
 void setup()
 {
     Serial.begin(115200);
-    dip.commit(); // establish baseline
+    dip.sync(); // establish baseline (no edges on boot)
 }
 
 void loop()
@@ -120,7 +132,7 @@ void loop()
 
 ## Quick Use (Port Expander – Advanced Path)
 
-Uses the **core factories** with a custom reader.
+Uses the **core factories** with a custom reader (GPIO, expanders, or anything you can index).
 
 ```cpp
 #include <Arduino.h>
@@ -129,33 +141,46 @@ Uses the **core factories** with a custom reader.
 #include <SwitchBank.h>
 #include <SwitchBank_Factory.h>
 
-Adafruit_MCP23X17 mcp;
-uint8_t EXP_PINS[8] = {0,1,2,3,4,5,6,7};
+// Default I2C address 0x20.
+const uint8_t MCP_ADDR = 0x20;
 
+// SwitchBank index 0..7 maps to these expander pins (using GPA0..GPA7).
+const uint8_t EXP_PINS[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+
+// MCP23017 I2C GPIO expander instance.
+Adafruit_MCP23X17 mcp;
+
+// Time source (ms).
 uint32_t now_ms() { return (uint32_t)millis(); }
 
+// Reader returns the *electrical* level: true == HIGH, false == LOW.
 bool readExpander(uint8_t pin)
 {
-    return mcp.digitalRead(pin) == LOW; // LOW = ON (active-low wiring)
+    return mcp.digitalRead(pin) == HIGH;
 }
 
-auto bank = makeSwitchBankPins<8>(EXP_PINS, 30, readExpander, now_ms);
+// Create the SwitchBank as a normal global object.
+// Constructors / factories are side-effect free (no pin reads, no time reads).
+static auto bank = makeSwitchBankPins<8>(EXP_PINS, 30, readExpander, now_ms);
 
 void setup()
 {
     Serial.begin(115200);
     Wire.begin();
 
-    if (!mcp.begin_I2C(0x20))
+    if (!mcp.begin_I2C(MCP_ADDR))
     {
         Serial.println("MCP23017 not found!");
         while (true) delay(100);
     }
 
-    for (int i = 0; i < 8; ++i)
+    for (uint8_t i = 0; i < 8; ++i)
         mcp.pinMode(EXP_PINS[i], INPUT_PULLUP);
 
-    bank.commit();
+    bank.setMinPollMs(5);
+
+    // Establish baseline after IO is configured (no edges on boot).
+    bank.sync();
 }
 
 void loop()
@@ -190,41 +215,47 @@ Sometimes you want a readable, chainable setup without picking a specific factor
 
 static const uint8_t KEYS[4] = {25, 26, 27, 14};
 
-// Reader returns the *electrical* level: true == HIGH, false == LOW.
-// Polarity is controlled by the active-low mask (below).
-auto bank = SwitchBankBuilder<4>{KEYS}
-    .withDebounce(20)
-    .withAllActiveLow() // LOW means logical ON
-    .withTime([]() -> uint32_t { return (uint32_t)millis(); })
-    .withReader([](uint8_t pin) -> bool { return digitalRead(pin) == HIGH; })
-    .build();
-
 void setup()
 {
     for (uint8_t p : KEYS) pinMode(p, INPUT_PULLUP);
-    bank.commit();
+
+    // Reader returns the *electrical* level: true == HIGH, false == LOW.
+    // Polarity is controlled by the active-low mask (below).
+    static auto bank_storage = SwitchBankBuilder<4>{KEYS}
+        .withDebounce(20)
+        .withAllActiveLow() // LOW means logical ON
+        .withTime([]() -> uint32_t { return (uint32_t)millis(); })
+        .withReader([](uint8_t pin) -> bool { return digitalRead(pin) == HIGH; })
+        .build();
+
+    bank_storage.sync();
+}
+
+void loop()
+{
+    bank_storage.update();
+}
+
+// Mixing polarities is also straightforward:
+
+static const uint8_t ACTIVE_HIGH[1] = {2}; // only index 2 is active-high; all others active-low
+
+void setup_mixed()
+{
+    for (uint8_t p : KEYS) pinMode(p, INPUT_PULLUP);
+
+    static auto mixed_storage = SwitchBankBuilder<4>{KEYS}
+        .withDebounce(20)
+        .withActiveHighIndices(ACTIVE_HIGH)
+        .withTime([]() -> uint32_t { return (uint32_t)millis(); })
+        .withReader([](uint8_t pin) -> bool { return digitalRead(pin) == HIGH; })
+        .build();
+
+    mixed_storage.sync();
 }
 ```
 
-Mixing polarities is also straightforward:
-
-```cpp
-static const uint8_t ACTIVE_HIGH[1] = {2}; // only index 2 is active-high; all others active-low
-
-auto mixed = SwitchBankBuilder<4>{KEYS}
-    .withDebounce(20)
-    .withActiveHighIndices(ACTIVE_HIGH)
-    .withTime([]() -> uint32_t { return (uint32_t)millis(); })
-    .withReader([](uint8_t pin) -> bool { return digitalRead(pin) == HIGH; })
-    .build();
-```
-
-> Builder instances are simple aggregates; they do not allocate memory.
-
-### SwitchBankBuilder (Fluent Construction)
-
-Sometimes you want a readable, chainable setup without picking a specific factory overload.
-`SwitchBankBuilder` gives you a **runtime-polarity** construction path that stays lightweight (no heap) and keeps configuration in one place.
+If you prefer named functions over lambdas, here's the same pattern:
 
 ```cpp
 #include <SwitchBank.h>
@@ -235,15 +266,22 @@ static const uint8_t KEYS[4] = {0, 1, 2, 3};
 uint32_t now_ms() { return (uint32_t)millis(); }
 bool readPin(uint8_t key) { return digitalRead(key) == HIGH; } // electrical level
 
-auto bank = SwitchBankBuilder<4>{KEYS}
-                .withDebounce(20)
-                .withAllActiveLow()          // or: .withActiveLowMask(...)
-                .withTime(&now_ms)           // enables no-arg update()
-                .withReader(&readPin)        // or: .withReader(readCtx, ctx)
-                .build();
+void setup()
+{
+    for (uint8_t p : KEYS) pinMode(p, INPUT_PULLUP);
+
+    static auto bank_storage = SwitchBankBuilder<4>{KEYS}
+        .withDebounce(20)
+        .withAllActiveLow()          // or: .withActiveLowMask(...)
+        .withTime(&now_ms)           // enables no-arg update()
+        .withReader(&readPin)        // or: .withReader(readCtx, ctx)
+        .build();
+
+    bank_storage.sync();
+}
 ```
 
-This is equivalent to using a runtime-mask factory, but can be easier to scan and teach.
+> Builder instances are simple aggregates; they do not allocate memory.
 
 ### Factory Selection
 
@@ -384,6 +422,38 @@ Practical starting points:
 
 Scan throttling is not a debounce substitute; it simply limits how often reads happen (useful for slow buses or power saving).
 
+### Port Expander Notes (Performance)
+
+This addendum is intentionally short and example-focused. It does not change any APIs; it just explains two patterns used in the MCP23017 example.
+
+#### Cached reads (fast I2C scans)
+
+`makeSwitchBankPins()` uses a per-key reader (`bool read(key)`) and will call it once per input during an `update()` scan.
+
+For I²C expanders, a naive reader like `mcp.digitalRead(pin)` can cause **N I²C transactions per scan** (one call per input).
+If you want performance, cache a packed port read **once per loop()** and serve per-key reads from the cached value:
+
+```cpp
+static uint8_t g_portA_cache = 0;
+
+static void refreshExpanderCache()
+{
+    const uint16_t gpioAB = mcp.readGPIOAB();       // one I2C transaction per loop()
+    g_portA_cache = (uint8_t)(gpioAB & 0x00FF);     // GPA0..GPA7
+}
+
+static bool readExpander(uint8_t pin)
+{
+    return ((g_portA_cache >> pin) & 1) != 0;       // HIGH=true, LOW=false
+}
+
+void loop()
+{
+    refreshExpanderCache();
+    bank.update();
+}
+```
+
 ### Runtime Polarity Changes
 
 ```cpp
@@ -420,6 +490,9 @@ bank.setOnCommit([](const SwitchBankSnapshot& s) noexcept {
 ```
 
 Callbacks run in the caller context and must be fast.
+
+> **Note:** `commit()` is an advanced operation.  
+> It is not required for normal polling and should not be used for boot-time initialization.
 
 ---
 
