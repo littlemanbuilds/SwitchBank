@@ -1,6 +1,6 @@
 {
   "name": "SwitchBank",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Generic N-bit switch bank with per-bit debounce, compile-time/runtime polarity, latch modes, scan throttling, pluggable readers (GPIO/expanders), POD snapshot, rising/falling edge masks, and an optional on-commit callback Constructors/factories are side-effect free; call sync() once after IO init for a clean baseline.",
   "keywords": "switch,dip,debounce,input,gpio,mcp23017,expander,latch,edge,snapshot,callback,arduino,pullup,pulldown,sync,portable",
   "license": "MIT",
@@ -17,12 +17,23 @@
     "url": "https://github.com/LittleManBuilds/SwitchBank.git"
   },
   "frameworks": "arduino",
-  "platforms": "*",
+  "platforms": [
+    "atmelavr",
+    "megaavr",
+    "atmelsam",
+    "samd",
+    "espressif32",
+    "espressif8266",
+    "raspberrypi",
+    "teensy",
+    "ststm32"
+  ],
   "headers": [
     "SwitchBank.h",
     "SwitchBank_Factory.h",
-    "SwitchBankHandler.h",
-    "SwitchBank_Arduino.h"
+    "SwitchBank_Handler.h",
+    "SwitchBank_Arduino.h",
+    "SwitchBank_Compatibility"
   ],
   "build": {
     "includeDir": "src",

@@ -52,6 +52,7 @@ changeCount	KEYWORD2
 setOnCommit	KEYWORD2
 
 # Runtime configuration
+setTimeFn	KEYWORD2
 setTimeSource	KEYWORD2
 setMinPollMs	KEYWORD2
 setLatchMode	KEYWORD2

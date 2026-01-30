@@ -40,6 +40,23 @@ automatic `pinMode`, `digitalRead`, and `millis()` handling.
 
 ---
 
+## Supported Platforms
+
+This library is continuously tested on the following platforms:
+
+- AVR (Uno, Nano, Mega-class boards)
+- megaAVR (Nano Every)
+- ESP32
+- ESP8266
+- RP2040 (Raspberry Pi Pico)
+- SAMD (MKR / Zero)
+- STM32 (Nucleo-class boards)
+- Teensy 4.x
+
+Other Arduino-compatible boards may work, but are not currently part of the automated test matrix.
+
+---
+
 ## Core Concepts
 
 - **Key** – Value stored in the key array (GPIO number, expander index, etc.).
@@ -516,6 +533,25 @@ struct SwitchBankSnapshot {
 - Call `update()` every 1–10 ms for GPIO.
 - Use scan throttling for expanders.
 - Prefer compile-time polarity when wiring is fixed.
+
+---
+
+## Compatibility Testing
+
+All examples are regularly compiled across supported platforms using PlatformIO.
+
+Before each release, `pio run -c platformio.ci.ini` is used to verify cross-platform compatibility.
+
+---
+
+## Contributing / Issues
+
+If you encounter issues on unsupported platforms, please include:
+
+- Board name
+- Core version
+- PlatformIO / Arduino IDE version
+- Minimal repro sketch
 
 ---
 

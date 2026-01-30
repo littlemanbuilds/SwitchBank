@@ -6,12 +6,12 @@
  * @file SwitchBank_Factory.h
  * @author Little Man Builds (Darren Osborne)
  * @date 2025-10-01
- * @copyright Copyright © 2025 Little Man Builds
+ * @copyright Copyright © 2026 Little Man Builds
  */
 
 #pragma once
 
-#include <cstdint>
+#include <stdint.h>
 #include <initializer_list>
 #include <SwitchBank.h>
 
@@ -22,8 +22,8 @@
  * @tparam N Number of inputs (1..32).
  * @return Active-low mask (bit=1 means active-low).
  */
-template <std::size_t N>
-constexpr std::uint32_t mask_all_active_low() noexcept
+template <size_t N>
+constexpr uint32_t mask_all_active_low() noexcept
 {
     static_assert(N > 0 && N <= 32, "mask_all_active_low<N>: N must be 1..32");
     return (N == 32) ? 0xFFFFFFFFu : ((1u << N) - 1u);
@@ -34,8 +34,8 @@ constexpr std::uint32_t mask_all_active_low() noexcept
  * @tparam N Number of inputs (1..32).
  * @return Active-low mask (all zeros => active-high).
  */
-template <std::size_t N>
-constexpr std::uint32_t mask_all_active_high() noexcept
+template <size_t N>
+constexpr uint32_t mask_all_active_high() noexcept
 {
     static_assert(N > 0 && N <= 32, "mask_all_active_high<N>: N must be 1..32");
     return 0u;
@@ -48,14 +48,14 @@ constexpr std::uint32_t mask_all_active_high() noexcept
  * @param active_high_indices Indices (0..N-1) that should be active-high.
  * @return Active-low mask (bit=1 means active-low).
  */
-template <std::size_t N, std::size_t K>
-constexpr std::uint32_t mask_from_active_high_indices(const std::uint8_t (&active_high_indices)[K]) noexcept
+template <size_t N, size_t K>
+constexpr uint32_t mask_from_active_high_indices(const uint8_t (&active_high_indices)[K]) noexcept
 {
     static_assert(N > 0 && N <= 32, "mask_from_active_high_indices<N>: N must be 1..32");
-    std::uint32_t mask = mask_all_active_low<N>();
-    for (std::size_t i = 0; i < K; ++i)
+    uint32_t mask = mask_all_active_low<N>();
+    for (size_t i = 0; i < K; ++i)
     {
-        const std::uint8_t idx = active_high_indices[i];
+        const uint8_t idx = active_high_indices[i];
         if (idx < N)
         {
             mask &= ~(1u << idx);
@@ -70,11 +70,11 @@ constexpr std::uint32_t mask_from_active_high_indices(const std::uint8_t (&activ
  * @param active_high_indices Indices (0..N-1) that should be active-high.
  * @return Active-low mask (bit=1 means active-low).
  */
-template <std::size_t N>
-inline std::uint32_t mask_from_active_high_indices(std::initializer_list<std::uint8_t> active_high_indices) noexcept
+template <size_t N>
+inline uint32_t mask_from_active_high_indices(std::initializer_list<uint8_t> active_high_indices) noexcept
 {
-    std::uint32_t mask = mask_all_active_low<N>();
-    for (std::uint8_t idx : active_high_indices)
+    uint32_t mask = mask_all_active_low<N>();
+    for (uint8_t idx : active_high_indices)
     {
         if (idx < N)
         {
@@ -90,12 +90,12 @@ inline std::uint32_t mask_from_active_high_indices(std::initializer_list<std::ui
  * @param active_low Per-bit polarity array (N entries).
  * @return Active-low mask (bit=1 means active-low).
  */
-template <std::size_t N>
-constexpr std::uint32_t mask_from_active_low_array(const bool (&active_low)[N]) noexcept
+template <size_t N>
+constexpr uint32_t mask_from_active_low_array(const bool (&active_low)[N]) noexcept
 {
     static_assert(N > 0 && N <= 32, "mask_from_active_low_array<N>: N must be 1..32");
-    std::uint32_t mask = 0u;
-    for (std::size_t i = 0; i < N; ++i)
+    uint32_t mask = 0u;
+    for (size_t i = 0; i < N; ++i)
     {
         if (active_low[i])
         {
@@ -116,9 +116,9 @@ constexpr std::uint32_t mask_from_active_low_array(const bool (&active_low)[N]) 
  * @param time_fn Optional time source for no-arg update()/sync()/commit().
  * @return SwitchBank<N> instance (by value, zero-heap).
  */
-template <std::size_t N>
-inline SwitchBank<N> makeSwitchBankPins(const std::uint8_t (&keys)[N],
-                                        std::uint16_t debounce_ms,
+template <size_t N>
+inline SwitchBank<N> makeSwitchBankPins(const uint8_t (&keys)[N],
+                                        uint16_t debounce_ms,
                                         typename SwitchBank<N>::ReadPinFn read_pin,
                                         SwitchBankHandler::TimeFn time_fn = nullptr)
 {
@@ -135,9 +135,9 @@ inline SwitchBank<N> makeSwitchBankPins(const std::uint8_t (&keys)[N],
  * @param time_fn Optional time source for no-arg update()/sync()/commit().
  * @return SwitchBank<N> instance (by value, zero-heap).
  */
-template <std::size_t N>
-inline SwitchBank<N> makeSwitchBankCtx(const std::uint8_t (&keys)[N],
-                                       std::uint16_t debounce_ms,
+template <size_t N>
+inline SwitchBank<N> makeSwitchBankCtx(const uint8_t (&keys)[N],
+                                       uint16_t debounce_ms,
                                        typename SwitchBank<N>::ReadFn read_ctx,
                                        void *ctx = nullptr,
                                        SwitchBankHandler::TimeFn time_fn = nullptr)
@@ -155,11 +155,11 @@ inline SwitchBank<N> makeSwitchBankCtx(const std::uint8_t (&keys)[N],
  * @param time_fn Optional time source for no-arg update()/sync()/commit().
  * @return SwitchBank<N> instance (by value, zero-heap).
  */
-template <std::size_t N>
-inline SwitchBank<N> makeSwitchBankPinsMasked(const std::uint8_t (&keys)[N],
-                                              std::uint16_t debounce_ms,
+template <size_t N>
+inline SwitchBank<N> makeSwitchBankPinsMasked(const uint8_t (&keys)[N],
+                                              uint16_t debounce_ms,
                                               typename SwitchBank<N>::ReadPinFn read_pin,
-                                              std::uint32_t active_low_mask,
+                                              uint32_t active_low_mask,
                                               SwitchBankHandler::TimeFn time_fn = nullptr)
 {
     return SwitchBank<N>(keys, debounce_ms, active_low_mask, read_pin, time_fn);
@@ -176,12 +176,12 @@ inline SwitchBank<N> makeSwitchBankPinsMasked(const std::uint8_t (&keys)[N],
  * @param time_fn Optional time source for no-arg update()/sync()/commit().
  * @return SwitchBank<N> instance (by value, zero-heap).
  */
-template <std::size_t N>
-inline SwitchBank<N> makeSwitchBankCtxMasked(const std::uint8_t (&keys)[N],
-                                             std::uint16_t debounce_ms,
+template <size_t N>
+inline SwitchBank<N> makeSwitchBankCtxMasked(const uint8_t (&keys)[N],
+                                             uint16_t debounce_ms,
                                              typename SwitchBank<N>::ReadFn read_ctx,
                                              void *ctx,
-                                             std::uint32_t active_low_mask,
+                                             uint32_t active_low_mask,
                                              SwitchBankHandler::TimeFn time_fn = nullptr)
 {
     return SwitchBank<N>(keys, debounce_ms, active_low_mask, read_ctx, ctx, time_fn);
@@ -198,9 +198,9 @@ inline SwitchBank<N> makeSwitchBankCtxMasked(const std::uint8_t (&keys)[N],
  * @param time_fn Optional time source for no-arg update()/sync()/commit().
  * @return SwitchBank<N, -1, true> instance (by value, zero-heap).
  */
-template <std::size_t N>
-inline SwitchBank<N, -1, true> makeSwitchBankPinsRev(const std::uint8_t (&keys)[N],
-                                                     std::uint16_t debounce_ms,
+template <size_t N>
+inline SwitchBank<N, -1, true> makeSwitchBankPinsRev(const uint8_t (&keys)[N],
+                                                     uint16_t debounce_ms,
                                                      typename SwitchBank<N, -1, true>::ReadPinFn read_pin,
                                                      SwitchBankHandler::TimeFn time_fn = nullptr)
 {
@@ -217,9 +217,9 @@ inline SwitchBank<N, -1, true> makeSwitchBankPinsRev(const std::uint8_t (&keys)[
  * @param time_fn Optional time source for no-arg update()/sync()/commit().
  * @return SwitchBank<N, -1, true> instance (by value, zero-heap).
  */
-template <std::size_t N>
-inline SwitchBank<N, -1, true> makeSwitchBankCtxRev(const std::uint8_t (&keys)[N],
-                                                    std::uint16_t debounce_ms,
+template <size_t N>
+inline SwitchBank<N, -1, true> makeSwitchBankCtxRev(const uint8_t (&keys)[N],
+                                                    uint16_t debounce_ms,
                                                     typename SwitchBank<N, -1, true>::ReadFn read_ctx,
                                                     void *ctx = nullptr,
                                                     SwitchBankHandler::TimeFn time_fn = nullptr)
@@ -240,10 +240,10 @@ inline SwitchBank<N, -1, true> makeSwitchBankCtxRev(const std::uint8_t (&keys)[N
  * @param time_fn Optional time source for no-arg update()/sync()/commit().
  * @return SwitchBank<N, PolMask, ReverseOrder> instance (by value, zero-heap).
  */
-template <std::size_t N, std::int64_t PolMask, bool ReverseOrder = false>
+template <size_t N, int64_t PolMask, bool ReverseOrder = false>
 inline SwitchBank<N, PolMask, ReverseOrder>
-makeSwitchBankPinsCT(const std::uint8_t (&keys)[N],
-                     std::uint16_t debounce_ms,
+makeSwitchBankPinsCT(const uint8_t (&keys)[N],
+                     uint16_t debounce_ms,
                      typename SwitchBank<N, PolMask, ReverseOrder>::ReadPinFn read_pin,
                      SwitchBankHandler::TimeFn time_fn = nullptr)
 {
@@ -266,10 +266,10 @@ makeSwitchBankPinsCT(const std::uint8_t (&keys)[N],
  * @param time_fn Optional time source for no-arg update()/sync()/commit().
  * @return SwitchBank<N, PolMask, ReverseOrder> instance (by value, zero-heap).
  */
-template <std::size_t N, std::int64_t PolMask, bool ReverseOrder = false>
+template <size_t N, int64_t PolMask, bool ReverseOrder = false>
 inline SwitchBank<N, PolMask, ReverseOrder>
-makeSwitchBankCtxCT(const std::uint8_t (&keys)[N],
-                    std::uint16_t debounce_ms,
+makeSwitchBankCtxCT(const uint8_t (&keys)[N],
+                    uint16_t debounce_ms,
                     typename SwitchBank<N, PolMask, ReverseOrder>::ReadFn read_ctx,
                     void *ctx = nullptr,
                     SwitchBankHandler::TimeFn time_fn = nullptr)
@@ -288,13 +288,13 @@ makeSwitchBankCtxCT(const std::uint8_t (&keys)[N],
  * @brief Fluent builder for SwitchBank creation (runtime polarity).
  * @tparam N Number of inputs (1..32).
  */
-template <std::size_t N>
+template <size_t N>
 struct SwitchBankBuilder
 {
-    const std::uint8_t (&keys)[N];                ///< Keys to use (pins/identifiers).
-    std::uint16_t debounce_ms{0};                 ///< Debounce in ms (0 disables).
-    std::uint32_t mask{mask_all_active_low<N>()}; ///< Active-low mask (bit=1 means active-low).
-    SwitchBankHandler::TimeFn time_fn{nullptr};   ///< Optional time source for no-arg update()/sync()/commit().
+    const uint8_t (&keys)[N];                   ///< Keys to use (pins/identifiers).
+    uint16_t debounce_ms{0};                    ///< Debounce in ms (0 disables).
+    uint32_t mask{mask_all_active_low<N>()};    ///< Active-low mask (bit=1 means active-low).
+    SwitchBankHandler::TimeFn time_fn{nullptr}; ///< Optional time source for no-arg update()/sync()/commit().
 
     typename SwitchBank<N>::ReadPinFn read_pin{nullptr}; ///< Per-key reader (fast path).
     typename SwitchBank<N>::ReadFn read_ctx{nullptr};    ///< Context-aware reader.
@@ -305,7 +305,7 @@ struct SwitchBankBuilder
      * @param ms Debounce time (0 disables).
      * @return *this for chaining.
      */
-    SwitchBankBuilder &withDebounce(std::uint16_t ms)
+    SwitchBankBuilder &withDebounce(uint16_t ms)
     {
         debounce_ms = ms;
         return *this;
@@ -336,7 +336,7 @@ struct SwitchBankBuilder
      * @param m Mask to use.
      * @return *this for chaining.
      */
-    SwitchBankBuilder &withActiveLowMask(std::uint32_t m)
+    SwitchBankBuilder &withActiveLowMask(uint32_t m)
     {
         mask = m;
         return *this;
@@ -348,8 +348,8 @@ struct SwitchBankBuilder
      * @param idx Indices (0..N-1) that are active-high.
      * @return *this for chaining.
      */
-    template <std::size_t K>
-    SwitchBankBuilder &withActiveHighIndices(const std::uint8_t (&idx)[K])
+    template <size_t K>
+    SwitchBankBuilder &withActiveHighIndices(const uint8_t (&idx)[K])
     {
         mask = mask_from_active_high_indices<N, K>(idx);
         return *this;
