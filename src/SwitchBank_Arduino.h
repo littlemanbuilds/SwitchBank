@@ -47,6 +47,7 @@ public:
      * @param pins GPIO pins (keys).
      * @param debounce_ms Debounce window (ms).
      * @param pol Logical switch polarity (ActiveLow or ActiveHigh).
+     *            Ignored when a compile-time PolarityMask is used.
      * @param pin Arduino pinMode configuration.
      * @param skipPinInit If true, does not call pinMode().
      */
@@ -55,12 +56,12 @@ public:
                       Polarity pol = Polarity::ActiveLow,
                       PinModeCfg pin = PinModeCfg::Pullup,
                       bool skipPinInit = false) noexcept
-        : bank_{makeSwitchBankCtxMasked<N>(
+        : bank_{Bank(
               pins,
               debounce_ms,
+              activeLowMaskFromPolarity(pol),
               &readArduinoElectricalLevelCtx,
               nullptr,
-              activeLowMaskFromPolarity(pol),
               &now_ms)}
     {
         if (!skipPinInit)
@@ -235,6 +236,8 @@ private:
  * @param pol Logical switch polarity (default: ActiveLow).
  * @param pin Arduino pinMode configuration (default: Pullup).
  * @param skipPinInit If true, does not call pinMode().
+ * @return SwitchBankArduino<N> with runtime polarity control.
+ *         For compile-time polarity/reverse order, instantiate SwitchBankArduino directly.
  */
 template <size_t N>
 inline SwitchBankArduino<N> makeSwitchBankArduino(const uint8_t (&pins)[N],

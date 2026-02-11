@@ -11,9 +11,21 @@
 
 #pragma once
 
+#include <assert.h>
+#include <stddef.h>
 #include <stdint.h>
-#include <initializer_list>
 #include <SwitchBank.h>
+
+#if defined(__has_include)
+#if __has_include(<initializer_list>)
+#include <initializer_list>
+#define SWITCHBANK_HAS_INITIALIZER_LIST 1
+#endif
+#endif
+
+#ifndef SWITCHBANK_HAS_INITIALIZER_LIST
+#define SWITCHBANK_HAS_INITIALIZER_LIST 0
+#endif
 
 // ---- Mask helpers ---- //
 
@@ -49,7 +61,11 @@ constexpr uint32_t mask_all_active_high() noexcept
  * @return Active-low mask (bit=1 means active-low).
  */
 template <size_t N, size_t K>
+#if __cplusplus >= 201402L
 constexpr uint32_t mask_from_active_high_indices(const uint8_t (&active_high_indices)[K]) noexcept
+#else
+inline uint32_t mask_from_active_high_indices(const uint8_t (&active_high_indices)[K]) noexcept
+#endif
 {
     static_assert(N > 0 && N <= 32, "mask_from_active_high_indices<N>: N must be 1..32");
     uint32_t mask = mask_all_active_low<N>();
@@ -70,6 +86,7 @@ constexpr uint32_t mask_from_active_high_indices(const uint8_t (&active_high_ind
  * @param active_high_indices Indices (0..N-1) that should be active-high.
  * @return Active-low mask (bit=1 means active-low).
  */
+#if SWITCHBANK_HAS_INITIALIZER_LIST
 template <size_t N>
 inline uint32_t mask_from_active_high_indices(std::initializer_list<uint8_t> active_high_indices) noexcept
 {
@@ -83,6 +100,36 @@ inline uint32_t mask_from_active_high_indices(std::initializer_list<uint8_t> act
     }
     return mask;
 }
+#endif
+
+/**
+ * @brief Runtime variant without STL containers.
+ * @tparam N Total inputs (1..32).
+ * @return Active-low mask with no active-high indices (all active-low).
+ */
+template <size_t N>
+inline uint32_t mask_from_active_high_indices() noexcept
+{
+    return mask_all_active_low<N>();
+}
+
+/**
+ * @brief Runtime variant without STL containers.
+ * @tparam N Total inputs (1..32).
+ * @param active_high_index First active-high index (0..N-1).
+ * @param rest Additional active-high indices (0..N-1).
+ * @return Active-low mask (bit=1 means active-low).
+ */
+template <size_t N, typename... Rest>
+inline uint32_t mask_from_active_high_indices(uint8_t active_high_index, Rest... rest) noexcept
+{
+    uint32_t mask = mask_from_active_high_indices<N>(rest...);
+    if (active_high_index < N)
+    {
+        mask &= ~(1u << active_high_index);
+    } ///< Clear bit -> active-high.
+    return mask;
+}
 
 /**
  * @brief Build a mask from a per-bit boolean array.
@@ -91,7 +138,11 @@ inline uint32_t mask_from_active_high_indices(std::initializer_list<uint8_t> act
  * @return Active-low mask (bit=1 means active-low).
  */
 template <size_t N>
+#if __cplusplus >= 201402L
 constexpr uint32_t mask_from_active_low_array(const bool (&active_low)[N]) noexcept
+#else
+inline uint32_t mask_from_active_low_array(const bool (&active_low)[N]) noexcept
+#endif
 {
     static_assert(N > 0 && N <= 32, "mask_from_active_low_array<N>: N must be 1..32");
     uint32_t mask = 0u;
@@ -301,6 +352,13 @@ struct SwitchBankBuilder
     void *ctx{nullptr};                                  ///< Reader context (nullable).
 
     /**
+     * @brief Construct a builder bound to a key array.
+     * @param key_array Keys to use (pins/identifiers).
+     */
+    explicit SwitchBankBuilder(const uint8_t (&key_array)[N]) noexcept
+        : keys(key_array) {}
+
+    /**
      * @brief Set debounce window in ms.
      * @param ms Debounce time (0 disables).
      * @return *this for chaining.
@@ -394,7 +452,17 @@ struct SwitchBankBuilder
     }
 
     /**
+     * @brief Check whether a reader has been configured.
+     * @return true if either a per-key or context-aware reader is set.
+     */
+    bool hasReader() const noexcept
+    {
+        return (read_pin != nullptr) || (read_ctx != nullptr);
+    }
+
+    /**
      * @brief Build the SwitchBank instance (runtime polarity, LSB-first).
+     *        Requires withReader(...) to be configured first.
      * @return SwitchBank<N> instance (by value, zero-heap).
      */
 
@@ -410,6 +478,9 @@ struct SwitchBankBuilder
 #endif
     SwitchBank<N> build() const
     {
+        // Require an explicit reader to avoid silently creating an inert bank.
+        assert(hasReader());
+
         if (read_pin)
         {
             SwitchBank<N> b(keys, debounce_ms, mask, read_pin, time_fn);

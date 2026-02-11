@@ -1,155 +1,192 @@
 # SwitchBank
 
-Generic **N-bit switch bank** handler for Arduino/ESP platforms with robust
-**per-bit debounce**, optional **compile-time or runtime polarity**,
-**latch modes**, **scan throttling**, and **pluggable readers**
-(GPIO, expanders, or custom sources).
+Generic **N-bit switch bank** library for Arduino-class targets.
 
-The **core library is device-agnostic** and does not depend on Arduino GPIO.
-An optional **Arduino helper layer** provides a beginner-friendly path with
-automatic `pinMode`, `digitalRead`, and `millis()` handling.
+SwitchBank is a header-only input-state engine for DIP/slide/rocker switch banks with:
 
-> **Author:** Little Man Builds  
-> **License:** MIT
+- per-bit debounce
+- active-low/active-high polarity control
+- edge detection helpers (`rose`, `fell`, masks)
+- optional scan throttling
+- compile-time or runtime polarity paths
+- optional reversed bit order
+- optional commit callback
+
+The core is device-agnostic. You provide a reader function that returns an electrical level (`HIGH` or `LOW`) for each key.
+
+An optional Arduino wrapper (`SwitchBank_Arduino.h`) adds:
+
+- automatic `pinMode(...)`
+- `digitalRead(...)` integration
+- `millis()` integration
+
+> Author: Little Man Builds  
+> License: MIT
 
 ---
 
 ## Highlights
 
-- **Per-bit debounce** (independent raw + stable tracking)
-- **Polarity control** (active-low / active-high, compile-time or runtime)
-- **Latch modes** (`ManualClear`, `ClearOnRead`)
-- **Scan throttling** (minimum poll interval, ideal for I²C/SPI expanders)
-- **Optional reversed bit order**
-- **Edge helpers**: `rose(i)`, `fell(i)` + packed masks
-- **Packed helpers**: `value()`, `changedMask()`, `value8()` / `changedMask8()` (`N ≤ 8`)
-- **POD snapshot** (`snapshot()`)
-- **Optional on-commit callback** (zero-cost when disabled)
-- **Pluggable readers** (GPIO, MCP23017, custom)
-- **Header-only core**
+- **Header-only core** (no `.cpp` implementation units required)
+- **N = 1..32** switches per bank
+- **Per-bit debounce** (raw + stable tracking per input)
+- **Edge helpers** (`rose(i)`, `fell(i)`, `risingMask()`, `fallingMask()`)
+- **State snapshots** (`snapshot()`)
+- **Latch behavior control** (`ManualClear`, `ClearOnRead`)
+- **Scan throttling** (`setMinPollMs(...)`) for slow buses
+- **Factory helpers + fluent builder**
+- **Portable mask helpers** (array/variadic, optional `initializer_list`)
 
 ---
 
 ## Installation
 
-**Arduino IDE:** Install via Library Manager or ZIP  
-**PlatformIO:** Add to `lib_deps` or install from ZIP
+### Arduino IDE
 
-> The core library has **no external dependencies**.  
-> Some examples use _Adafruit_MCP23X17_ to demonstrate expanders.
+- Install from Library Manager (if published), or
+- Add as ZIP from this repository.
+
+### PlatformIO
+
+Use as a library dependency or local project library.
+
+Core library dependencies: **none**.  
+Some expander examples use:
+
+- `adafruit/Adafruit MCP23017 Arduino Library`
 
 ---
 
 ## Supported Platforms
 
-This library is continuously tested on the following platforms:
+The repository currently carries PlatformIO environments for:
 
-- AVR (Uno, Nano, Mega-class boards)
-- megaAVR (Nano Every)
-- ESP32
-- ESP8266
-- RP2040 (Raspberry Pi Pico)
-- SAMD (MKR / Zero)
-- STM32 (Nucleo-class boards)
-- Teensy 4.x
+- AVR (`uno`)
+- megaAVR (`nano_every`)
+- ESP32 (`esp32-s3-devkitc-1`)
+- ESP8266 (`esp8266_nodemcuv2`)
+- RP2040 (`pico`)
+- SAM (`mkrzero`)
+- STM32 (`bluepill_f103c8`)
+- Teensy (`teensy41`)
 
-Other Arduino-compatible boards may work, but are not currently part of the automated test matrix.
+See `platformio.ini` for exact environment names.
 
 ---
 
 ## Core Concepts
 
-- **Key** – Value stored in the key array (GPIO number, expander index, etc.).
-- **Logical index** – Position in the bank (`0..N-1`).
-- **Raw state** – Instantaneous electrical read (may bounce).
-- **Committed state** – Debounced, stable state.
+- **Key**: the identifier stored in your key array (GPIO number, expander pin index, etc.)
+- **Logical index**: `0..N-1`, position in the packed switch bank
+- **Electrical level**: what your reader returns (`true` for HIGH, `false` for LOW)
+- **Logical ON/OFF**: normalized state after polarity is applied
+- **Committed state**: debounced stable state
 
-### Debounce Model
+### Reader Contract
 
-For each bit:
+Reader functions must return the **electrical** level:
 
-1. Track last raw value and timestamp.
-2. When raw input remains unchanged for `debounce_ms`, **commit** the new state.
-3. Edge helpers (`rose`, `fell`) compare previous vs current committed states.
+- `true` => pin reads HIGH
+- `false` => pin reads LOW
 
-### Sync vs Commit
-
-SwitchBank intentionally keeps **constructors / factories side-effect free** (no pin reads, no time reads).
-That makes the library more portable and makes README code safer to copy/paste.
-
-> **Rule of thumb:**  
-> Use `sync()` for startup and reconfiguration.  
-> Use `commit()` only when you intentionally want edges _right now_.
-
-After IO is configured (e.g. after `pinMode(...)` / expander init), call **`sync()` once** to establish a baseline:
-
-- `sync()` reads the current hardware levels
-- sets `current == previous`
-- clears `changed()`
-- resets per-bit debounce history
-
-A **commit** is different:
-
-- `commit()` reads hardware and commits immediately
-- if the value differs from the current state, it **will** generate edges (`changed/rose/fell`)
-
-In short: use **`sync()` on boot**, use **`commit()` when you intentionally want an immediate commit**.
+SwitchBank applies polarity to map electrical levels to logical ON/OFF.
 
 ---
 
-## Quick Use (GPIO – Beginner Path)
+## Lifecycle: `sync()`, `update()`, `commit()`
 
-Uses **`SwitchBank_Arduino.h`**, which:
+Constructors/factories are intentionally side-effect free (no reads, no time calls).
 
-- configures `pinMode` automatically,
-- uses `digitalRead` internally,
-- uses `millis()` as the time source.
+Typical startup flow:
 
-> **Portability note:** `PinModeCfg::Pulldown` maps to `INPUT_PULLDOWN` when the selected Arduino core provides it.
-> If `INPUT_PULLDOWN` is not available, SwitchBank falls back to plain `INPUT` (so you can still compile, but you must use an external pulldown resistor).
+1. Configure IO (`pinMode`, expander init, bus init).
+2. Call `sync()` once to establish baseline.
+3. Call `update()` repeatedly in `loop()`/task.
+
+### `sync()`
+
+- reads hardware now
+- sets `current == previous`
+- clears `changed()`
+- resets debounce history
+
+Use this on boot and after polarity reconfiguration.
+
+### `update()`
+
+- runs debounce integration
+- commits only when stable value changes
+- returns `true` only when a commit occurred
+
+Time-source behavior:
+
+- `update(now_ms)` always uses your explicit timestamp
+- no-arg `update()` uses injected time source when provided
+- on Arduino builds, no-arg `update()` falls back to `millis()` if no time source is injected
+- on non-Arduino builds without a time source, no-arg `update()` returns `false`
+
+### `commit()`
+
+- bypasses debounce and commits immediate reading
+- may generate edges if value differs
+
+Use only when you explicitly want immediate commit behavior.
+
+---
+
+## Quick Start: Arduino Wrapper
 
 ```cpp
 #include <Arduino.h>
 #include <SwitchBank_Arduino.h>
 
-// DIP switch pins
 const uint8_t DIP_PINS[3] = {25, 26, 27};
 
 auto dip = makeSwitchBankArduino<3>(
     DIP_PINS,
-    20,
-    Polarity::ActiveLow,
-    PinModeCfg::Pullup
+    20,                  // debounce ms
+    Polarity::ActiveLow, // LOW means logical ON
+    PinModeCfg::Pullup   // INPUT_PULLUP
 );
 
 void setup()
 {
     Serial.begin(115200);
-    dip.sync(); // establish baseline (no edges on boot)
+    dip.sync(); // baseline without edges
 }
 
 void loop()
 {
     if (dip.update())
     {
-        for (int i = 0; i < dip.size(); ++i)
+        for (uint8_t i = 0; i < dip.size(); ++i)
         {
-            if (dip.rose(i)) // OFF -> ON
-                Serial.printf("Switch %d ON\n", i + 1);
+            if (dip.rose(i))
+            {
+                Serial.print("Switch ");
+                Serial.print(i + 1);
+                Serial.println(" ON");
+            }
 
-            if (dip.fell(i)) // ON -> OFF
-                Serial.printf("Switch %d OFF\n", i + 1);
+            if (dip.fell(i))
+            {
+                Serial.print("Switch ");
+                Serial.print(i + 1);
+                Serial.println(" OFF");
+            }
         }
     }
-    delay(100);
 }
 ```
 
+Portability note:
+
+- `PinModeCfg::Pulldown` maps to `INPUT_PULLDOWN` when available.
+- If the selected core does not define `INPUT_PULLDOWN`, wrapper falls back to `INPUT`.
+
 ---
 
-## Quick Use (Port Expander – Advanced Path)
-
-Uses the **core factories** with a custom reader (GPIO, expanders, or anything you can index).
+## Quick Start: Core + MCP23017
 
 ```cpp
 #include <Arduino.h>
@@ -158,27 +195,15 @@ Uses the **core factories** with a custom reader (GPIO, expanders, or anything y
 #include <SwitchBank.h>
 #include <SwitchBank_Factory.h>
 
-// Default I2C address 0x20.
 const uint8_t MCP_ADDR = 0x20;
-
-// SwitchBank index 0..7 maps to these expander pins (using GPA0..GPA7).
 const uint8_t EXP_PINS[8] = {0, 1, 2, 3, 4, 5, 6, 7};
 
-// MCP23017 I2C GPIO expander instance.
 Adafruit_MCP23X17 mcp;
 
-// Time source (ms).
 uint32_t now_ms() { return (uint32_t)millis(); }
+bool readExpander(uint8_t pin) { return mcp.digitalRead(pin) == HIGH; } // electrical level
 
-// Reader returns the *electrical* level: true == HIGH, false == LOW.
-bool readExpander(uint8_t pin)
-{
-    return mcp.digitalRead(pin) == HIGH;
-}
-
-// Create the SwitchBank as a normal global object.
-// Constructors / factories are side-effect free (no pin reads, no time reads).
-static auto bank = makeSwitchBankPins<8>(EXP_PINS, 30, readExpander, now_ms);
+static auto bank = makeSwitchBankPins<8>(EXP_PINS, 20, readExpander, now_ms);
 
 void setup()
 {
@@ -187,281 +212,196 @@ void setup()
 
     if (!mcp.begin_I2C(MCP_ADDR))
     {
-        Serial.println("MCP23017 not found!");
-        while (true) delay(100);
+        Serial.println("MCP23017 not found");
+        while (true) { delay(1000); }
     }
 
     for (uint8_t i = 0; i < 8; ++i)
         mcp.pinMode(EXP_PINS[i], INPUT_PULLUP);
 
     bank.setMinPollMs(5);
-
-    // Establish baseline after IO is configured (no edges on boot).
-    bank.sync();
+    bank.sync(now_ms());
 }
 
 void loop()
 {
-    if (bank.update())
+    if (bank.update(now_ms()))
     {
-        for (int i = 0; i < bank.size(); ++i)
-        {
-            if (bank.rose(i)) Serial.printf("S%d ON\n", i + 1);
-            if (bank.fell(i)) Serial.printf("S%d OFF\n", i + 1);
-        }
+        // Handle changes...
     }
-    delay(100);
 }
 ```
-
-> **Note:** The core library does not depend on Adafruit. Only this example requires it.
 
 ---
 
-## Advanced Usage
+## Example Sketches
 
-### SwitchBankBuilder (Fluent Construction)
+- `examples/01_Simple_DIP_3-bit/01_Simple_DIP_3-bit.ino`
+  - Basic Arduino wrapper usage and edge printing.
+- `examples/02_Mode_Names_3-bit/02_Mode_Names_3-bit.ino`
+  - Mapping packed values to mode names.
+- `examples/03_Port_Expander_8-bit/03_Port_Expander_8-bit.ino`
+  - Direct MCP23017 per-pin reads.
+- `examples/04_Port_Expander_Cached_Read/04_Port_Expander_Cached_Read.ino`
+  - Cached expander reads (one bus read per loop).
 
-Sometimes you want a readable, chainable setup without picking a specific factory overload.
-`SwitchBankBuilder` gives you a **runtime-polarity** construction path that stays lightweight (no heap) and keeps configuration in one place.
+---
 
-```cpp
-#include <Arduino.h>
-#include <SwitchBank.h>
-#include <SwitchBank_Factory.h>
+## Public API Summary
 
-static const uint8_t KEYS[4] = {25, 26, 27, 14};
-
-void setup()
-{
-    for (uint8_t p : KEYS) pinMode(p, INPUT_PULLUP);
-
-    // Reader returns the *electrical* level: true == HIGH, false == LOW.
-    // Polarity is controlled by the active-low mask (below).
-    static auto bank_storage = SwitchBankBuilder<4>{KEYS}
-        .withDebounce(20)
-        .withAllActiveLow() // LOW means logical ON
-        .withTime([]() -> uint32_t { return (uint32_t)millis(); })
-        .withReader([](uint8_t pin) -> bool { return digitalRead(pin) == HIGH; })
-        .build();
-
-    bank_storage.sync();
-}
-
-void loop()
-{
-    bank_storage.update();
-}
-
-// Mixing polarities is also straightforward:
-
-static const uint8_t ACTIVE_HIGH[1] = {2}; // only index 2 is active-high; all others active-low
-
-void setup_mixed()
-{
-    for (uint8_t p : KEYS) pinMode(p, INPUT_PULLUP);
-
-    static auto mixed_storage = SwitchBankBuilder<4>{KEYS}
-        .withDebounce(20)
-        .withActiveHighIndices(ACTIVE_HIGH)
-        .withTime([]() -> uint32_t { return (uint32_t)millis(); })
-        .withReader([](uint8_t pin) -> bool { return digitalRead(pin) == HIGH; })
-        .build();
-
-    mixed_storage.sync();
-}
-```
-
-If you prefer named functions over lambdas, here's the same pattern:
+### Core Type
 
 ```cpp
-#include <SwitchBank.h>
-#include <SwitchBank_Factory.h>
-
-static const uint8_t KEYS[4] = {0, 1, 2, 3};
-
-uint32_t now_ms() { return (uint32_t)millis(); }
-bool readPin(uint8_t key) { return digitalRead(key) == HIGH; } // electrical level
-
-void setup()
-{
-    for (uint8_t p : KEYS) pinMode(p, INPUT_PULLUP);
-
-    static auto bank_storage = SwitchBankBuilder<4>{KEYS}
-        .withDebounce(20)
-        .withAllActiveLow()          // or: .withActiveLowMask(...)
-        .withTime(&now_ms)           // enables no-arg update()
-        .withReader(&readPin)        // or: .withReader(readCtx, ctx)
-        .build();
-
-    bank_storage.sync();
-}
+template <size_t N, int64_t PolarityMask = -1, bool ReverseOrder = false>
+class SwitchBank;
 ```
 
-> Builder instances are simple aggregates; they do not allocate memory.
+- `N`: number of switches (`1..32`)
+- `PolarityMask`:
+  - `-1` => runtime polarity mask
+  - `>= 0` => compile-time active-low mask
+- `ReverseOrder`:
+  - `false` => `keys[0] -> bit0`
+  - `true` => reversed bit packing
 
-### Factory Selection
+### Key Methods (Core)
 
-- **Pins** factories: direct GPIO or expander pin numbers.
-- **Ctx** factories: use a context pointer (shared state, cached reads).
-- **Masked** variants: supply a fixed active-low mask at construction.
-- **CT (compile-time)** variants: smallest and fastest; polarity fixed at compile time.
-- **Rev** variants: reverse bit order when wiring is mirrored.
+- lifecycle: `sync`, `update`, `commit`
+- state: `value`, `peekValue`, `prevValue`, `changed`
+- edges: `rose`, `fell`, `changedMask`, `risingMask`, `fallingMask`
+- config: `setDebounceMs`, `setMinPollMs`, `setLatchMode`, `setTimeSource`
+- polarity: `setActiveLowMask`, `activeLowMask`
+- metadata: `size`, `kSize`, `lastCommitMs`, `changeCount`
+- helpers: `value8`, `changedMask8` (only when `N <= 8`)
+- snapshot: `snapshot`
+- optional callback API (when `SWITCHBANK_ENABLE_COMMIT_CALLBACK` is defined): `setOnCommit`
 
-### Polarity Masks
+### Factories (`SwitchBank_Factory.h`)
 
-A polarity mask defines which bits are **active-low**.
+- runtime polarity:
+  - `makeSwitchBankPins`
+  - `makeSwitchBankCtx`
+  - `makeSwitchBankPinsMasked`
+  - `makeSwitchBankCtxMasked`
+- reversed runtime bit order:
+  - `makeSwitchBankPinsRev`
+  - `makeSwitchBankCtxRev`
+- compile-time polarity (+ optional reverse):
+  - `makeSwitchBankPinsCT`
+  - `makeSwitchBankCtxCT`
 
-- Bit = 1 → active-low
-- Bit = 0 → active-high
+### Builder (`SwitchBankBuilder<N>`)
 
-Example for a 4-bit bank:
+Fluent runtime-polarity construction with:
 
-```
-Mask = 0b0101
-Bit 0: active-low
-Bit 1: active-high
-Bit 2: active-low
-Bit 3: active-high
-```
+- `withDebounce`
+- `withAllActiveLow` / `withAllActiveHigh`
+- `withActiveLowMask` / `withActiveHighIndices`
+- `withTime`
+- `withReader` (pin reader or context reader)
+- `build`
+- optional callback hookup (when `SWITCHBANK_ENABLE_COMMIT_CALLBACK` is defined): `onCommit`
 
-#### Polarity Mask Helpers
+Important:
 
-SwitchBank includes a set of helpers to make polarity masks easy and self-documenting (see `SwitchBank_Factory.h`):
+- configure a reader before `build()`
+- in debug builds, `build()` asserts if no reader is configured
 
-- `mask_all_active_low<N>()` – all bits active-low
-- `mask_all_active_high<N>()` – all bits active-high
-- `mask_from_active_high_indices<N, K>(idx)` – indices listed are active-high, all others active-low (compile-time array)
-- `mask_from_active_high_indices({1, 3})` – runtime `initializer_list` variant
-- `mask_from_active_low_array<N>(active_low)` – build a mask from a per-bit `bool` array (`true` means active-low)
+### Arduino Wrapper (`SwitchBank_Arduino.h`)
 
-Example (4 inputs; indices 1 and 3 are active-high, the rest active-low):
+- `makeSwitchBankArduino<N>(...)` returns `SwitchBankArduino<N>` (runtime polarity).
+- `core()` provides access to the underlying `SwitchBank<N, PolarityMask, ReverseOrder>`.
+- For compile-time polarity/reversed order with wrapper ergonomics, instantiate directly:
 
 ```cpp
-static const uint8_t AH[2] = {1, 3};
-const uint32_t mask = mask_from_active_high_indices<4, 2>(AH);
-// mask bits set to 1 => active-low
+const uint8_t PINS[8] = {2, 3, 4, 5, 6, 7, 8, 9};
+SwitchBankArduino<8, 0xFF, true> bank(
+    PINS,
+    20,
+    Polarity::ActiveLow,
+    PinModeCfg::Pullup
+);
 ```
 
-### Bit Order (LSB / MSB)
+---
 
-By default, SwitchBank packs switch states **LSB-first**.
+## Polarity Masks
 
-This means:
+Mask bit semantics:
 
-- `keys[0]` maps to **bit 0** (least-significant bit)
-- `keys[1]` maps to **bit 1**
+- bit = `1` => active-low
+- bit = `0` => active-high
+
+Helpers:
+
+- `mask_all_active_low<N>()`
+- `mask_all_active_high<N>()`
+- `mask_from_active_high_indices<N, K>(array)`
+- `mask_from_active_high_indices<N>(idx0, idx1, ...)` (portable variadic)
+- `mask_from_active_low_array<N>(bool_array)`
+- `mask_from_active_high_indices({1, 3})` (`initializer_list` overload when available on toolchain)
+
+---
+
+## Bit Order
+
+Default mapping:
+
+- `keys[0] -> bit 0`
+- `keys[1] -> bit 1`
 - ...
-- `keys[N-1]` maps to **bit N-1**
 
-#### Example (3-bit bank)
+Reversed mapping (`ReverseOrder=true` or `*Rev` factories):
 
-```cpp
-uint8_t keys[3] = {A, B, C};
-```
+- `keys[0] -> bit N-1`
+- `keys[N-1] -> bit 0`
 
-| Switch | Bit |
-| -----: | :-: |
-|      A |  0  |
-|      B |  1  |
-|      C |  2  |
+Bit order affects packed values, edge masks, helper index interpretation, and polarity masks.
 
-If switches **A** and **C** are ON:
+---
 
-```
-value() == 0b101 == 5
-```
+## Latch Modes
 
-This packing is used consistently by:
+- `ManualClear`: `changed()` stays true until `clearChanged()`
+- `ClearOnRead`: calling `value()` clears `changed()`
 
-- `value()` / `prevValue()`
-- `changedMask()`, `risingMask()`, `fallingMask()`
-- `rose(i)` / `fell(i)`
-- snapshots and polarity masks
+Use `peekValue()` for side-effect-free reads.
 
-#### Reversed Bit Order
+---
 
-Some hardware is wired in the opposite direction (for example, the leftmost switch should be the MSB).
-Rather than reordering your pin array, SwitchBank supports **compile-time bit order reversal**.
+## Scan Throttling
 
-Use a `Rev` factory or set `ReverseOrder = true`.
+Use to reduce expensive scans (I2C/SPI expanders):
 
 ```cpp
-auto bank = makeSwitchBankPinsRev<3>(keys, 20, readPin, now_ms);
+bank.setMinPollMs(10);
 ```
 
-With reversed order, the mapping becomes:
+Guidelines:
 
-| Switch | Bit |
-| -----: | :-: |
-|      A |  2  |
-|      B |  1  |
-|      C |  0  |
+- direct GPIO: often `0`
+- bus expanders: start around `5..20` ms
 
-The same physical switches now produce:
+This is not a debounce replacement; it only limits scan frequency.
 
-```
-value() == 0b101
-```
+---
 
-> **Important**
->
-> Bit order reversal affects **everything**:
->
-> - packed values
-> - per-bit helpers (`rose(i)`, `fell(i)`)
-> - polarity masks
-> - snapshot fields
->
-> Logical indices (`i`) always refer to the **logical switch order**, not the physical wiring order.
+## Port Expander Performance: Cached Reads
 
-### Latch Modes
-
-| Mode        | Behavior                                        |
-| ----------- | ----------------------------------------------- |
-| ManualClear | `changed()` remains true until `clearChanged()` |
-| ClearOnRead | Reading `value()` clears the changed flag       |
-
-Use `peekValue()` if you need a read without side effects.
-
-### Scan Throttling
-
-For slow buses (I²C/SPI):
-
-```cpp
-bank.setMinPollMs(10); // limit polling rate
-```
-
-Practical starting points:
-
-- **GPIO (direct pins):** `min_poll_ms = 0` (poll as fast as your loop/task allows)
-- **I²C expanders (e.g., MCP23017):** start around `5..20 ms` depending on bus speed and how many devices share the bus
-
-Scan throttling is not a debounce substitute; it simply limits how often reads happen (useful for slow buses or power saving).
-
-### Port Expander Notes (Performance)
-
-This addendum is intentionally short and example-focused. It does not change any APIs; it just explains two patterns used in the MCP23017 example.
-
-#### Cached reads (fast I2C scans)
-
-`makeSwitchBankPins()` uses a per-key reader (`bool read(key)`) and will call it once per input during an `update()` scan.
-
-For I²C expanders, a naive reader like `mcp.digitalRead(pin)` can cause **N I²C transactions per scan** (one call per input).
-If you want performance, cache a packed port read **once per loop()** and serve per-key reads from the cached value:
+For expanders, avoid N bus transactions per scan when possible.
 
 ```cpp
 static uint8_t g_portA_cache = 0;
 
 static void refreshExpanderCache()
 {
-    const uint16_t gpioAB = mcp.readGPIOAB();       // one I2C transaction per loop()
-    g_portA_cache = (uint8_t)(gpioAB & 0x00FF);     // GPA0..GPA7
+    const uint16_t gpioAB = mcp.readGPIOAB();   // one I2C read
+    g_portA_cache = (uint8_t)(gpioAB & 0x00FF); // GPA0..GPA7
 }
 
 static bool readExpander(uint8_t pin)
 {
-    return ((g_portA_cache >> pin) & 1) != 0;       // HIGH=true, LOW=false
+    return ((g_portA_cache >> pin) & 1) != 0;   // electrical HIGH/LOW
 }
 
 void loop()
@@ -471,90 +411,125 @@ void loop()
 }
 ```
 
-### Runtime Polarity Changes
+---
+
+## Runtime Polarity Changes
 
 ```cpp
-bank.setActiveLowMask(0xFF); // all bits active-low
+bank.setActiveLowMask(0xFF);
 ```
 
-### Snapshot Logging
+Behavior note:
 
-`snapshot()` returns a POD struct without side effects:
-
-```cpp
-auto s = bank.snapshot();
-Serial.println(s.value);
-```
+- when runtime polarity is enabled (`PolarityMask == -1`), mask is updated and the bank resyncs
+- when compile-time polarity is used, runtime mask changes are ignored (no-op)
 
 ---
 
-## On-Commit Callback
+## Snapshot and Callback
 
-Enable with:
+`snapshot()` returns:
+
+```cpp
+struct SwitchBankSnapshot {
+    uint32_t value;
+    uint32_t changed;
+    uint32_t rising;
+    uint32_t falling;
+    uint32_t t_ms;
+    uint32_t seq;
+};
+```
+
+Enable callback support by defining:
 
 ```cpp
 #define SWITCHBANK_ENABLE_COMMIT_CALLBACK
 ```
 
-Then:
+Then register:
 
 ```cpp
 bank.setOnCommit([](const SwitchBankSnapshot& s) noexcept {
-    Serial.printf("Commit value=%lu seq=%lu\n",
-                  (unsigned long)s.value,
-                  (unsigned long)s.seq);
+    Serial.print("Commit value=");
+    Serial.println((unsigned long)s.value);
 });
 ```
 
-Callbacks run in the caller context and must be fast.
-
-> **Note:** `commit()` is an advanced operation.  
-> It is not required for normal polling and should not be used for boot-time initialization.
+Callbacks execute in caller context (`update` / `commit`), so keep them fast and non-blocking.
 
 ---
 
-## Snapshot Struct
+## Testing and Validation
 
-```cpp
-struct SwitchBankSnapshot {
-    uint32_t value;    // stable packed value
-    uint32_t changed;  // bits that toggled on last commit
-    uint32_t rising;   // 0→1 edges on last commit
-    uint32_t falling;  // 1→0 edges on last commit
-    uint32_t t_ms;     // timestamp (ms) of last commit
-    uint32_t seq;      // commit sequence number
-};
+This repository uses PlatformIO environments in `platformio.ini`.
+
+### Build current default environment
+
+```bash
+pio run
+```
+
+### Build a specific environment
+
+```bash
+pio run -e nano_every
+```
+
+### Build all configured environments
+
+```bash
+for env in esp32-s3-devkitc-1 esp8266_nodemcuv2 pico mkrzero nano_every uno teensy41 bluepill_f103c8; do
+  pio run -e "$env" || break
+done
+```
+
+### Compile each example across all environments
+
+```bash
+examples=(
+  examples/01_Simple_DIP_3-bit
+  examples/02_Mode_Names_3-bit
+  examples/03_Port_Expander_8-bit
+  examples/04_Port_Expander_Cached_Read
+)
+
+envs=(esp32-s3-devkitc-1 esp8266_nodemcuv2 pico mkrzero nano_every uno teensy41 bluepill_f103c8)
+
+for ex in "${examples[@]}"; do
+  for env in "${envs[@]}"; do
+    echo "=== $env :: $ex ==="
+    pio run -e "$env" --project-option "src_dir=$ex" || exit 1
+  done
+done
 ```
 
 ---
 
-## Performance Notes
+## Troubleshooting
 
-- Call `update()` every 1–10 ms for GPIO.
-- Use scan throttling for expanders.
-- Prefer compile-time polarity when wiring is fixed.
-
----
-
-## Compatibility Testing
-
-All examples are regularly compiled across supported platforms using PlatformIO.
-
-Before each release, `pio run -c platformio.ci.ini` is used to verify cross-platform compatibility.
+- No changes detected:
+  - verify reader returns electrical level (`HIGH=true`, `LOW=false`)
+  - verify polarity mask / `Polarity` selection
+  - ensure `sync()` was called after IO init
+- Unexpected startup edges:
+  - call `sync()` once after initialization, before normal polling
+- Expander polling feels slow:
+  - use cached-read pattern and tune `setMinPollMs(...)`
 
 ---
 
-## Contributing / Issues
+## Contributing
 
-If you encounter issues on unsupported platforms, please include:
+When reporting an issue, include:
 
-- Board name
-- Core version
-- PlatformIO / Arduino IDE version
-- Minimal repro sketch
+- board name
+- core/platform version
+- PlatformIO or Arduino IDE version
+- minimal reproducible sketch
 
 ---
 
 ## License
 
-MIT © Little Man Builds
+MIT Copyright (c) Little Man Builds

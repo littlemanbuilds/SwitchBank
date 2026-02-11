@@ -17,7 +17,7 @@
 
 // ---- Version macro ---- //
 
-#define SWITCHBANK_VERSION "1.0.1"
+#define SWITCHBANK_VERSION "1.0.2"
 
 /**
  * @tparam N Number of switches (1..32).

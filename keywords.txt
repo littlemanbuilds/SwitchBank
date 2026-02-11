@@ -22,7 +22,6 @@ makeSwitchBankCtxCT	KEYWORD2
 makeSwitchBankPinsRev	KEYWORD2
 makeSwitchBankCtxRev	KEYWORD2
 SwitchBankBuilder	KEYWORD2
-onCommit	KEYWORD2
 
 # Arduino factory / helpers
 makeSwitchBankArduino	KEYWORD2
@@ -47,18 +46,30 @@ fell	KEYWORD2
 size	KEYWORD2
 kSize	KEYWORD2
 snapshot	KEYWORD2
+core	KEYWORD2
 lastCommitMs	KEYWORD2
 changeCount	KEYWORD2
 setOnCommit	KEYWORD2
 
 # Runtime configuration
-setTimeFn	KEYWORD2
 setTimeSource	KEYWORD2
 setMinPollMs	KEYWORD2
 setLatchMode	KEYWORD2
 setDebounceMs	KEYWORD2
 setActiveLowMask	KEYWORD2
 activeLowMask	KEYWORD2
+
+# Builder APIs
+withDebounce	KEYWORD2
+withAllActiveLow	KEYWORD2
+withAllActiveHigh	KEYWORD2
+withActiveLowMask	KEYWORD2
+withActiveHighIndices	KEYWORD2
+withTime	KEYWORD2
+withReader	KEYWORD2
+hasReader	KEYWORD2
+build	KEYWORD2
+onCommit	KEYWORD2
 
 # Mask helpers
 mask_all_active_low	KEYWORD2

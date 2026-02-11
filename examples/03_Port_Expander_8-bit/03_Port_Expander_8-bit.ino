@@ -55,7 +55,7 @@ void setup()
         Serial.println("MCP23017 not found!");
         while (true)
         {
-            delay(100);
+            delay(1000);
         }
     }
 
