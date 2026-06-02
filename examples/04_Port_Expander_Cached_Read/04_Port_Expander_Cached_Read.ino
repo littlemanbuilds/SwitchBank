@@ -3,6 +3,7 @@
  *
  * @brief Detect on/off changes from an MCP23017 I2C expander, using a cached
  *        (single read per loop) input scan.
+ *        Written for Arduino-class boards, with ESP32 as the primary hardware target.
  */
 
 #include <Arduino.h>
@@ -66,6 +67,7 @@ void setup()
     delay(50);
 
     // Initialize I2C.
+    // Wire.begin() uses board-default I2C pins; on ESP32 you may also pass SDA/SCL.
     Wire.begin();
 
     // Initialize the MCP23017.
@@ -87,7 +89,7 @@ void setup()
     // Optional: prevent excessive I2C polling.
     bank.setMinPollMs(5);
 
-    // Establish a clean baseline after hardware initialization.
+    // Important: establish a clean baseline after hardware initialization.
     // Refresh the cache first so sync() sees valid input data.
     refreshExpanderCache();
     bank.sync(now_ms());

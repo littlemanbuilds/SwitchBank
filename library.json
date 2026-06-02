@@ -1,8 +1,8 @@
 {
   "name": "SwitchBank",
-  "version": "1.0.2",
-  "description": "Generic N-bit switch bank with per-bit debounce, compile-time/runtime polarity, latch modes, scan throttling, pluggable readers (GPIO/expanders), POD snapshots, rising/falling edge masks, and an optional on-commit callback. Constructors/factories are side-effect free; call sync() once after IO init for a clean baseline.",
-  "keywords": "switch,switchbank,dip,debounce,input,gpio,mcp23017,expander,latch,edge,snapshot,callback,builder,arduino,pullup,pulldown,sync,portable",
+  "version": "1.1.0",
+  "description": "Generic N-bit switch bank with per-bit debounce, compile-time/runtime polarity, latch modes, scan throttling, pluggable readers (GPIO/expanders), POD snapshots, rising/falling edge masks, and an optional on-commit callback. ESP32-S3 is the primary hardware-tested target; other configured targets are intended compile-validation targets. Constructors/factories are side-effect free; call sync() once after IO init for a clean baseline.",
+  "keywords": "switch,switchbank,dip,debounce,input,gpio,mcp23017,expander,latch,edge,snapshot,callback,builder,arduino,pullup,pulldown,sync,cross-core",
   "license": "MIT",
   "authors": [
     {
@@ -19,9 +19,8 @@
   "frameworks": "arduino",
   "platforms": [
     "atmelavr",
-    "megaavr",
+    "atmelmegaavr",
     "atmelsam",
-    "samd",
     "espressif32",
     "espressif8266",
     "raspberrypi",

@@ -7,6 +7,7 @@
 #include <Arduino.h>
 #include <SwitchBank_Arduino.h>
 
+// ESP32-S3 example pins. Change these to suitable GPIOs for your board.
 // We have 3 DIP switches on GPIO 35, 36, 37.
 // One side of each switch goes to GND, the other side to the pin.
 // With INPUT_PULLUP, the pin reads HIGH when 'off' and LOW when 'on'.
@@ -26,7 +27,8 @@ void setup()
 {
     Serial.begin(115200);
 
-    // Synchronize the initial switch state.
+    // Important: synchronize the initial switch state after pin setup.
+    // This establishes a baseline so boot positions do not look like edges.
     dip.sync();
 }
 

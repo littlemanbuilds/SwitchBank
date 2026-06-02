@@ -1,46 +1,11 @@
+# lib
 
-This directory is intended for project specific (private) libraries.
-PlatformIO will compile them to static libraries and link into the executable file.
+This project does not keep private PlatformIO libraries here. SwitchBank's
+library headers are in `../src`, and the MCP23017 examples pull their external
+dependency from `lib_deps` in `../platformio.ini`.
 
-The source code of each library should be placed in a separate directory
-("lib/your_library_name/[Code]").
+Target note:
 
-For example, see the structure of the following example libraries `Foo` and `Bar`:
-
-|--lib
-|  |
-|  |--Bar
-|  |  |--docs
-|  |  |--examples
-|  |  |--src
-|  |     |- Bar.c
-|  |     |- Bar.h
-|  |  |- library.json (optional. for custom build options, etc) https://docs.platformio.org/page/librarymanager/config.html
-|  |
-|  |--Foo
-|  |  |- Foo.c
-|  |  |- Foo.h
-|  |
-|  |- README --> THIS FILE
-|
-|- platformio.ini
-|--src
-   |- main.c
-
-Example contents of `src/main.c` using Foo and Bar:
-```
-#include <Foo.h>
-#include <Bar.h>
-
-int main (void)
-{
-  ...
-}
-
-```
-
-The PlatformIO Library Dependency Finder will find automatically dependent
-libraries by scanning project source files.
-
-More information about PlatformIO Library Dependency Finder
-- https://docs.platformio.org/page/librarymanager/ldf.html
+- ESP32-S3 is the primary hardware-tested target for the current examples.
+- The MCP23017 examples are Arduino + I2C examples, not ESP32-only code, but I2C pin choices, pullups, and bus setup remain board-specific.
+- Other configured boards are useful compile checks; treat them as build coverage until you verify real hardware behavior.

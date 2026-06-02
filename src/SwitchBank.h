@@ -17,7 +17,7 @@
 
 // ---- Version macro ---- //
 
-#define SWITCHBANK_VERSION "1.0.2"
+#define SWITCHBANK_VERSION "1.1.0"
 
 /**
  * @tparam N Number of switches (1..32).
@@ -314,9 +314,22 @@ public:
     [[nodiscard]] bool changed() const noexcept override { return changed_; }
 
     /**
-     * @brief Manually clear the 'changed' latch.
+     * @brief Manually clear only the 'changed' latch.
+     *
+     * changedMask(), risingMask(), fallingMask(), rose(), and fell() still
+     * describe the current/previous transition until the next commit, sync(),
+     * or clearEdges().
      */
     void clearChanged() noexcept override { changed_ = false; }
+
+    /**
+     * @brief Clear the current/previous edge masks without changing the current value.
+     *
+     * This makes changedMask(), risingMask(), fallingMask(), rose(), and fell()
+     * report no edge. It does not clear the 'changed' latch; call clearChanged()
+     * as well if you want changed() to return false.
+     */
+    void clearEdges() noexcept override { previous_ = current_; }
 
     /**
      * @brief Number of switches (bits).
@@ -608,7 +621,7 @@ private:
     uint32_t previous_{0};        ///< Previous committed packed value.
     mutable bool changed_{false}; ///< True if value changed on last commit.
     uint32_t last_commit_ms_{0};  ///< Timestamp of last commit (ms).
-    uint32_t change_count_{0};    ///< Number of commits since construction.
+    uint32_t change_count_{0};    ///< Number of commits since the last sync().
 #ifdef SWITCHBANK_ENABLE_COMMIT_CALLBACK
     /// Optional callback invoked after each successful commit.
     OnCommitFn on_commit_{nullptr};

@@ -137,8 +137,11 @@ public:
 
     // ---- Control ---- //
 
-    /// @brief Clear the changed/edge flags.
+    /// @brief Clear only the changed latch; edge masks still describe previous/current.
     void clearChanged() noexcept { bank_.clearChanged(); }
+
+    /// @brief Clear previous/current edge masks without changing the current value.
+    void clearEdges() noexcept { bank_.clearEdges(); }
 
     /// @brief Set the debounce window (ms).
     void setDebounceMs(uint16_t ms) noexcept { bank_.setDebounceMs(ms); }

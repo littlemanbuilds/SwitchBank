@@ -2,6 +2,7 @@
  * @file 03_Port_Expander_8-bit.ino
  *
  * @brief Print on/off changes from 8 switches on an MCP23017 I2C expander.
+ *        Written for Arduino-class boards, with ESP32 as the primary hardware target.
  */
 
 #include <Arduino.h>
@@ -47,6 +48,7 @@ void setup()
     delay(50);
 
     // Initialize I2C.
+    // Wire.begin() uses board-default I2C pins; on ESP32 you may also pass SDA/SCL.
     Wire.begin();
 
     // Initialize the MCP23017.
@@ -68,7 +70,7 @@ void setup()
     // Optional: prevent excessive I2C polling.
     bank.setMinPollMs(5);
 
-    // Call sync() once after all hardware is initialized.
+    // Important: call sync() once after all hardware is initialized.
     // This reads the current switch states and establishes a baseline.
     // Prevent any phantom on/off events at boot.
     bank.sync(now_ms());

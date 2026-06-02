@@ -88,9 +88,22 @@ public:
     virtual bool changed() const noexcept = 0;
 
     /**
-     * @brief Clear the internal 'changed' flag.
+     * @brief Clear only the internal 'changed' latch.
+     *
+     * Edge masks are derived from current/previous values, so changedMask(),
+     * risingMask(), and fallingMask() may still describe the last committed
+     * transition until the next commit, sync(), or clearEdges().
      */
     virtual void clearChanged() noexcept = 0;
+
+    /**
+     * @brief Clear current/previous edge masks when supported by the implementation.
+     *
+     * The base implementation is a no-op so existing handler implementations
+     * remain source-compatible. Concrete SwitchBank instances collapse
+     * previous == current.
+     */
+    virtual void clearEdges() noexcept {}
 
     /**
      * @brief Number of switches in the concrete bank (N).

@@ -1,6 +1,6 @@
 # SwitchBank
 
-Generic **N-bit switch bank** library for Arduino-class targets.
+Generic **N-bit switch bank** library for Arduino-class targets, developed with ESP32-S3 hardware as the primary reference target.
 
 SwitchBank is a header-only input-state engine for DIP/slide/rocker switch banks with:
 
@@ -35,7 +35,7 @@ An optional Arduino wrapper (`SwitchBank_Arduino.h`) adds:
 - **Latch behavior control** (`ManualClear`, `ClearOnRead`)
 - **Scan throttling** (`setMinPollMs(...)`) for slow buses
 - **Factory helpers + fluent builder**
-- **Portable mask helpers** (array/variadic, optional `initializer_list`)
+- **Cross-core mask helpers** (array/variadic, optional `initializer_list`)
 
 ---
 
@@ -57,20 +57,18 @@ Some expander examples use:
 
 ---
 
-## Supported Platforms
+## Supported and Tested Targets
 
-The repository currently carries PlatformIO environments for:
+SwitchBank is written for Arduino-class C++ cores. The core library is intentionally device-agnostic: it reads whatever electrical levels your reader function returns. The examples and current hardware validation are ESP32-focused.
 
-- AVR (`uno`)
-- megaAVR (`nano_every`)
-- ESP32 (`esp32-s3-devkitc-1`)
-- ESP8266 (`esp8266_nodemcuv2`)
-- RP2040 (`pico`)
-- SAM (`mkrzero`)
-- STM32 (`bluepill_f103c8`)
-- Teensy (`teensy41`)
+| Target / feature | Status |
+| --- | --- |
+| ESP32-S3 (`esp32-s3-devkitc-1`) | Primary development and hardware-tested target. GPIO examples use ESP32-S3-style pin choices; change pins for your board. |
+| MCP23017 examples | Arduino + I2C examples using the Adafruit MCP23017 library. They are not ESP32-only, but I2C pins, pullups, and bus setup are board-specific. |
+| AVR, megaAVR, ESP8266, RP2040, SAMD, STM32, Teensy | PlatformIO compile-validation targets in `platformio.ini`. Treat these as build coverage unless you have verified hardware on that board. |
+| `PinModeCfg::Pulldown` | Uses `INPUT_PULLDOWN` only when the selected Arduino core defines it. ESP32 cores provide internal pulldown support on many GPIOs; other cores may fall back to plain `INPUT`. |
 
-See `platformio.ini` for exact environment names.
+No portability is faked: missing hardware pull directions are not emulated. Use an external resistor when the target board does not provide the pullup/pulldown mode your wiring expects.
 
 ---
 
@@ -91,6 +89,17 @@ Reader functions must return the **electrical** level:
 
 SwitchBank applies polarity to map electrical levels to logical ON/OFF.
 
+### DIP Switch Polarity Table
+
+A common DIP switch wiring is active-low: one side of the switch goes to `GND`, the other side goes to the input pin, and the pin uses `INPUT_PULLUP`.
+
+| Wiring style | Switch physical state | Electrical level read by reader | SwitchBank polarity | Logical state |
+| --- | --- | --- | --- | --- |
+| DIP to `GND` with `INPUT_PULLUP` | Open / off | `HIGH` (`true`) | `Polarity::ActiveLow` or mask bit `1` | OFF / bit `0` |
+| DIP to `GND` with `INPUT_PULLUP` | Closed / on | `LOW` (`false`) | `Polarity::ActiveLow` or mask bit `1` | ON / bit `1` |
+| DIP to `VCC` with pulldown or external resistor | Open / off | `LOW` (`false`) | `Polarity::ActiveHigh` or mask bit `0` | OFF / bit `0` |
+| DIP to `VCC` with pulldown or external resistor | Closed / on | `HIGH` (`true`) | `Polarity::ActiveHigh` or mask bit `0` | ON / bit `1` |
+
 ---
 
 ## Lifecycle: `sync()`, `update()`, `commit()`
@@ -110,7 +119,7 @@ Typical startup flow:
 - clears `changed()`
 - resets debounce history
 
-Use this on boot and after polarity reconfiguration.
+Use this on boot, after IO/expander setup, and after polarity reconfiguration. It is the normal way to establish a baseline before the first `update()` so the initial switch positions do not look like fake edges.
 
 ### `update()`
 
@@ -140,6 +149,7 @@ Use only when you explicitly want immediate commit behavior.
 #include <Arduino.h>
 #include <SwitchBank_Arduino.h>
 
+// ESP32-S3 example pins. Change these to suitable GPIOs for your board.
 const uint8_t DIP_PINS[3] = {25, 26, 27};
 
 auto dip = makeSwitchBankArduino<3>(
@@ -152,7 +162,10 @@ auto dip = makeSwitchBankArduino<3>(
 void setup()
 {
     Serial.begin(115200);
-    dip.sync(); // baseline without edges
+
+    // Important: baseline after pinMode setup, before the first update().
+    // This prevents startup switch positions from being reported as edges.
+    dip.sync();
 }
 
 void loop()
@@ -179,10 +192,11 @@ void loop()
 }
 ```
 
-Portability note:
+Cross-platform note:
 
 - `PinModeCfg::Pulldown` maps to `INPUT_PULLDOWN` when available.
 - If the selected core does not define `INPUT_PULLDOWN`, wrapper falls back to `INPUT`.
+- Example GPIO numbers are ESP32-oriented; choose pins that exist and support the selected mode on your board.
 
 ---
 
@@ -220,6 +234,8 @@ void setup()
         mcp.pinMode(EXP_PINS[i], INPUT_PULLUP);
 
     bank.setMinPollMs(5);
+
+    // Important: baseline after expander setup, before the first update().
     bank.sync(now_ms());
 }
 
@@ -268,7 +284,7 @@ class SwitchBank;
 
 - lifecycle: `sync`, `update`, `commit`
 - state: `value`, `peekValue`, `prevValue`, `changed`
-- edges: `rose`, `fell`, `changedMask`, `risingMask`, `fallingMask`
+- edges: `rose`, `fell`, `changedMask`, `risingMask`, `fallingMask`, `clearEdges`
 - config: `setDebounceMs`, `setMinPollMs`, `setLatchMode`, `setTimeSource`
 - polarity: `setActiveLowMask`, `activeLowMask`
 - metadata: `size`, `kSize`, `lastCommitMs`, `changeCount`
@@ -367,6 +383,12 @@ Bit order affects packed values, edge masks, helper index interpretation, and po
 
 Use `peekValue()` for side-effect-free reads.
 
+Important edge-mask detail:
+
+- `clearChanged()` clears only the `changed()` latch.
+- `changedMask()`, `risingMask()`, `fallingMask()`, `rose(i)`, and `fell(i)` are derived from `current` and `previous`, so they still describe the last committed transition after `clearChanged()`.
+- `clearEdges()` collapses `previous == current` so the edge masks read as zero. It does not clear the `changed()` latch; call `clearChanged()` as well if you want both the latch and masks cleared.
+
 ---
 
 ## Scan Throttling
@@ -404,10 +426,17 @@ static bool readExpander(uint8_t pin)
     return ((g_portA_cache >> pin) & 1) != 0;   // electrical HIGH/LOW
 }
 
+void setup()
+{
+    // After Wire.begin(), mcp.begin_I2C(), and mcp.pinMode(...):
+    refreshExpanderCache();
+    bank.sync(now_ms());                         // clean baseline from the cache
+}
+
 void loop()
 {
     refreshExpanderCache();
-    bank.update();
+    bank.update(now_ms());
 }
 ```
 
@@ -463,6 +492,8 @@ Callbacks execute in caller context (`update` / `commit`), so keep them fast and
 ## Testing and Validation
 
 This repository uses PlatformIO environments in `platformio.ini`.
+
+The ESP32-S3 environment is the primary hardware target. The other configured environments are useful compile checks for the header-only core and Arduino wrapper; passing those builds does not mean every example pinout or pull mode has been hardware-tested on that board.
 
 ### Build current default environment
 
