@@ -1,15 +1,20 @@
 /**
- * @file 03_Port_Expander_8-bit.ino
+ * MIT License
  *
- * @brief Print on/off changes from 8 switches on an MCP23017 I2C expander.
- *        Written for Arduino-class boards, with ESP32 as the primary hardware target.
+ * @brief Read eight active-low switches from an MCP23017 using simple per-pin access.
+ *
+ * @file 03_PortExpander8Bit.ino
+ * @author Little Man Builds (Darren Osborne)
+ * @date 2026-01-16
+ * @copyright Copyright © 2026 Little Man Builds
  */
+
+#include <SwitchBank.h>
+#include <SwitchBank_Factory.h>
 
 #include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_MCP23X17.h>
-#include <SwitchBank.h>
-#include <SwitchBank_Factory.h>
 
 // Default I2C address 0x20.
 const uint8_t MCP_ADDR = 0x20;
@@ -20,7 +25,7 @@ const uint8_t EXP_PINS[8] = {0, 1, 2, 3, 4, 5, 6, 7};
 // MCP23017 I2C GPIO expander instance.
 Adafruit_MCP23X17 mcp;
 
-// ---- SwitchBank helpers ----//
+// ---- SwitchBank helpers ---- //
 
 // Time source (ms).
 uint32_t now_ms()
@@ -29,6 +34,8 @@ uint32_t now_ms()
 }
 
 // Pin reader for SwitchBank.
+// This simple example performs one expander access per key. For a multi-contact
+// selector that should come from one hardware snapshot, see Example 04.
 static bool readExpander(uint8_t pin)
 {
     return mcp.digitalRead(pin) == HIGH; ///< Returns raw level (HIGH=true, LOW=false).

@@ -13,7 +13,7 @@
 
 #include <Arduino.h>
 #include <stdint.h>
-#include <SwitchBank_Factory.h>
+#include "SwitchBank_Factory.h"
 
 /// @brief Logical switch polarity.
 enum class Polarity : uint8_t
@@ -81,61 +81,104 @@ public:
     /// @brief Poll hardware with explicit timestamp.
     bool update(uint32_t now) noexcept { return bank_.update(now); }
 
-    /// @brief Synchronize baseline to current hardware **without emitting edges**.
-    void sync() noexcept { bank_.sync(); }
+    /// @brief Synchronize baseline to current hardware without emitting edges.
+    /// @return true when the GPIO acquisition succeeded.
+    bool sync() noexcept { return bank_.sync(); }
 
     /// @brief Synchronize baseline with an explicit timestamp.
-    void sync(uint32_t now) noexcept { bank_.sync(now); }
+    /// @return true when the GPIO acquisition succeeded.
+    bool sync(uint32_t now) noexcept { return bank_.sync(now); }
 
-    /// @brief Commit the current state immediately (may emit edges if different).
-    ///        Prefer sync() for the initial baseline.
-    void commit() noexcept { bank_.commit(); }
+    /// @brief Immediately accept the current GPIO state, bypassing debounce.
+    /// @return true when the GPIO acquisition succeeded.
+    bool forceCommitForCommissioning() noexcept { return bank_.forceCommitForCommissioning(); }
 
-    /// @brief Commit the current state immediately using an explicit timestamp.
-    void commit(uint32_t now) noexcept { bank_.commit(now); }
+    /// @brief Timestamped commissioning commit.
+    /// @return true when the GPIO acquisition succeeded.
+    bool forceCommitForCommissioning(uint32_t now) noexcept { return bank_.forceCommitForCommissioning(now); }
+
+#ifndef SWITCHBANK_NO_LEGACY_COMMIT
+    /// @brief Legacy compatibility alias. Prefer forceCommitForCommissioning().
+    SWITCHBANK_DEPRECATED("Use forceCommitForCommissioning().")
+    void commit() noexcept { (void)bank_.forceCommitForCommissioning(); }
+
+    /// @brief Legacy timestamped compatibility alias.
+    SWITCHBANK_DEPRECATED("Use forceCommitForCommissioning(now).")
+    void commit(uint32_t now) noexcept { (void)bank_.forceCommitForCommissioning(now); }
+#endif
 
     // ---- Readout ---- //
 
     /// @brief Get the current committed packed switch value.
-    [[nodiscard]] uint32_t value() const noexcept { return bank_.value(); }
+    SWITCHBANK_NODISCARD uint32_t value() const noexcept { return bank_.value(); }
 
     /// @brief Get the current packed value without committing.
-    [[nodiscard]] uint32_t peekValue() const noexcept { return bank_.peekValue(); }
+    SWITCHBANK_NODISCARD uint32_t peekValue() const noexcept { return bank_.peekValue(); }
 
     /// @brief Get the previously committed packed switch value.
-    [[nodiscard]] uint32_t prevValue() const noexcept { return bank_.prevValue(); }
+    SWITCHBANK_NODISCARD uint32_t prevValue() const noexcept { return bank_.prevValue(); }
 
     /// @brief Check whether any switch changed on the last commit.
-    [[nodiscard]] bool changed() const noexcept { return bank_.changed(); }
+    SWITCHBANK_NODISCARD bool changed() const noexcept { return bank_.changed(); }
 
     /// @brief Get the bitmask of switches that changed on the last commit.
-    [[nodiscard]] uint32_t changedMask() const noexcept { return bank_.changedMask(); }
+    SWITCHBANK_NODISCARD uint32_t changedMask() const noexcept { return bank_.changedMask(); }
 
     /// @brief Get the bitmask of OFF→ON transitions.
-    [[nodiscard]] uint32_t risingMask() const noexcept { return bank_.risingMask(); }
+    SWITCHBANK_NODISCARD uint32_t risingMask() const noexcept { return bank_.risingMask(); }
 
     /// @brief Get the bitmask of ON→OFF transitions.
-    [[nodiscard]] uint32_t fallingMask() const noexcept { return bank_.fallingMask(); }
+    SWITCHBANK_NODISCARD uint32_t fallingMask() const noexcept { return bank_.fallingMask(); }
 
     /// @brief Check whether a switch transitioned from OFF to ON.
-    [[nodiscard]] bool rose(uint8_t i) const noexcept { return bank_.rose(i); }
+    SWITCHBANK_NODISCARD bool rose(uint8_t i) const noexcept { return bank_.rose(i); }
 
     /// @brief Check whether a switch transitioned from ON to OFF.
-    [[nodiscard]] bool fell(uint8_t i) const noexcept { return bank_.fell(i); }
+    SWITCHBANK_NODISCARD bool fell(uint8_t i) const noexcept { return bank_.fell(i); }
 
     /// @brief Check whether a switch is currently ON.
-    [[nodiscard]] bool isOn(uint8_t i) const noexcept { return bank_.isOn(i); }
+    SWITCHBANK_NODISCARD bool isOn(uint8_t i) const noexcept { return bank_.isOn(i); }
 
-    /// @brief Get the timestamp (ms) of the last state commit.
-    [[nodiscard]] uint32_t lastCommitMs() const noexcept { return bank_.lastCommitMs(); }
+    /// @brief Get the timestamp (ms) of the latest stable state transition.
+    SWITCHBANK_NODISCARD uint32_t lastCommitMs() const noexcept { return bank_.lastCommitMs(); }
 
-    /// @brief Get the total number of committed changes.
-    [[nodiscard]] uint32_t changeCount() const noexcept { return bank_.changeCount(); }
+    /// @brief Get the total stable state transition count.
+    SWITCHBANK_NODISCARD uint32_t changeCount() const noexcept { return bank_.changeCount(); }
+
+    /// @brief Whether the Arduino GPIO reader is configured.
+    SWITCHBANK_NODISCARD bool configured() const noexcept { return bank_.configured(); }
+
+    /// @brief Whether the most recent GPIO acquisition succeeded.
+    SWITCHBANK_NODISCARD bool valid() const noexcept { return bank_.valid(); }
+
+    /// @brief Whether at least one successful GPIO acquisition has occurred.
+    SWITCHBANK_NODISCARD bool hasSample() const noexcept { return bank_.hasSample(); }
+
+    /// @brief Timestamp of the latest successful GPIO acquisition.
+    SWITCHBANK_NODISCARD uint32_t sampleMs() const noexcept { return bank_.sampleMs(); }
+
+    /// @brief Stable state transition sequence.
+    SWITCHBANK_NODISCARD uint32_t changeSequence() const noexcept { return bank_.changeSequence(); }
+
+    /// @brief Successful acquisition sequence.
+    SWITCHBANK_NODISCARD uint32_t sequence() const noexcept { return bank_.sequence(); }
+
+    /// @brief Successful synchronization generation.
+    SWITCHBANK_NODISCARD uint32_t generation() const noexcept { return bank_.generation(); }
+
+    /// @brief Get complete health/freshness metadata.
+    SWITCHBANK_NODISCARD SwitchBankStatus status() const noexcept { return bank_.status(); }
 
     /// @brief Get the number of switches managed by this bank.
-    [[nodiscard]] constexpr uint8_t size() const noexcept { return bank_.size(); }
+    SWITCHBANK_NODISCARD uint8_t size() const noexcept { return bank_.size(); }
 
     // ---- Control ---- //
+
+    /// @brief Explicitly consume and clear the changed latch.
+    bool consumeChanged() noexcept { return bank_.consumeChanged(); }
+
+    /// @brief Explicitly consume retained edge masks and the changed latch.
+    SwitchBankEdges consumeEdges() noexcept { return bank_.consumeEdges(); }
 
     /// @brief Clear only the changed latch; edge masks still describe previous/current.
     void clearChanged() noexcept { bank_.clearChanged(); }
@@ -155,24 +198,25 @@ public:
     /// @brief Inject a time source used by update() and internal timestamps.
     void setTimeSource(typename SwitchBankHandler::TimeFn fn) noexcept { bank_.setTimeSource(fn); }
 
-    /// @brief Set the runtime active-low polarity mask.
-    void setActiveLowMask(uint32_t m) noexcept { bank_.setActiveLowMask(m); }
+    /// @brief Set runtime polarity and resynchronize without emitting edges.
+    /// @return true when the new polarity was established from a valid GPIO sample.
+    bool setActiveLowMask(uint32_t m) noexcept { return bank_.setActiveLowMask(m); }
 
     /// @brief Get the runtime active-low polarity mask.
-    [[nodiscard]] uint32_t activeLowMask() const noexcept { return bank_.activeLowMask(); }
+    SWITCHBANK_NODISCARD uint32_t activeLowMask() const noexcept { return bank_.activeLowMask(); }
 
 #ifdef SWITCHBANK_ENABLE_COMMIT_CALLBACK
     void setOnCommit(typename Bank::OnCommitFn cb) noexcept { bank_.setOnCommit(cb); }
 #endif
 
     /// @brief Produce a POD snapshot (same as core).
-    [[nodiscard]] typename Bank::SwitchBankSnapshot snapshot() const noexcept { return bank_.snapshot(); }
+    SWITCHBANK_NODISCARD typename Bank::SwitchBankSnapshot snapshot() const noexcept { return bank_.snapshot(); }
 
     /// @brief Access underlying SwitchBank directly (advanced).
-    [[nodiscard]] Bank &core() noexcept { return bank_; }
+    SWITCHBANK_NODISCARD Bank &core() noexcept { return bank_; }
 
     /// @brief Access underlying SwitchBank directly (advanced).
-    [[nodiscard]] const Bank &core() const noexcept { return bank_; }
+    SWITCHBANK_NODISCARD const Bank &core() const noexcept { return bank_; }
 
 private:
     /// @brief Arduino time source (milliseconds).
@@ -218,7 +262,8 @@ private:
 #if defined(INPUT_PULLDOWN)
             pinMode(pin, INPUT_PULLDOWN);
 #else
-            pinMode(pin, INPUT); ///< Fallback when INPUT_PULLDOWN is not supported by this core.
+            // Fallback when INPUT_PULLDOWN is not supported by this core.
+            pinMode(pin, INPUT);
 #endif
             break;
         case PinModeCfg::Input:

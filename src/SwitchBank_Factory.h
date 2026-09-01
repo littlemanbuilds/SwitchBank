@@ -14,7 +14,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <SwitchBank.h>
+#include "SwitchBank.h"
 
 #if defined(__has_include)
 #if __has_include(<initializer_list>)
@@ -164,7 +164,7 @@ inline uint32_t mask_from_active_low_array(const bool (&active_low)[N]) noexcept
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in ms (0 disables).
  * @param read_pin Per-key electrical reader (key → level HIGH/LOW).
- * @param time_fn Optional time source for no-arg update()/sync()/commit().
+ * @param time_fn Optional time source for no-arg update()/sync()/forceCommitForCommissioning().
  * @return SwitchBank<N> instance (by value, zero-heap).
  */
 template <size_t N>
@@ -183,7 +183,7 @@ inline SwitchBank<N> makeSwitchBankPins(const uint8_t (&keys)[N],
  * @param debounce_ms Debounce window in ms (0 disables).
  * @param read_ctx Reader taking (ctx, key) → electrical level HIGH/LOW.
  * @param ctx Opaque context pointer (nullable).
- * @param time_fn Optional time source for no-arg update()/sync()/commit().
+ * @param time_fn Optional time source for no-arg update()/sync()/forceCommitForCommissioning().
  * @return SwitchBank<N> instance (by value, zero-heap).
  */
 template <size_t N>
@@ -203,7 +203,7 @@ inline SwitchBank<N> makeSwitchBankCtx(const uint8_t (&keys)[N],
  * @param debounce_ms Debounce window in ms (0 disables).
  * @param read_pin Per-key electrical reader.
  * @param active_low_mask Active-low mask (bit=1 means active-low).
- * @param time_fn Optional time source for no-arg update()/sync()/commit().
+ * @param time_fn Optional time source for no-arg update()/sync()/forceCommitForCommissioning().
  * @return SwitchBank<N> instance (by value, zero-heap).
  */
 template <size_t N>
@@ -224,7 +224,7 @@ inline SwitchBank<N> makeSwitchBankPinsMasked(const uint8_t (&keys)[N],
  * @param read_ctx Context-aware reader (ctx, key) → electrical level HIGH/LOW.
  * @param ctx Opaque context pointer (nullable).
  * @param active_low_mask Active-low mask (bit=1 means active-low).
- * @param time_fn Optional time source for no-arg update()/sync()/commit().
+ * @param time_fn Optional time source for no-arg update()/sync()/forceCommitForCommissioning().
  * @return SwitchBank<N> instance (by value, zero-heap).
  */
 template <size_t N>
@@ -238,6 +238,92 @@ inline SwitchBank<N> makeSwitchBankCtxMasked(const uint8_t (&keys)[N],
     return SwitchBank<N>(keys, debounce_ms, active_low_mask, read_ctx, ctx, time_fn);
 }
 
+// ---- Factories (explicit acquisition validity) ---- //
+
+/**
+ * @brief Create a SwitchBank with a validity-aware context reader.
+ * @tparam N Number of inputs (1..32).
+ * @param keys Key array (pins/identifiers).
+ * @param debounce_ms Debounce window in milliseconds.
+ * @param read_ctx Reader returning SwitchBankReadResult for each key.
+ * @param ctx Opaque reader context.
+ * @param time_fn Optional millisecond time source.
+ * @return SwitchBank<N> instance with all inputs active-low.
+ */
+template <size_t N>
+inline SwitchBank<N> makeSwitchBankResultCtx(const uint8_t (&keys)[N],
+                                             uint16_t debounce_ms,
+                                             typename SwitchBank<N>::ReadResultFn read_ctx,
+                                             void *ctx = nullptr,
+                                             SwitchBankHandler::TimeFn time_fn = nullptr)
+{
+    return SwitchBank<N>(keys, debounce_ms, mask_all_active_low<N>(), read_ctx, ctx, time_fn);
+}
+
+/**
+ * @brief Create a SwitchBank with a validity-aware context reader and explicit polarity mask.
+ * @tparam N Number of inputs (1..32).
+ * @param keys Key array (pins/identifiers).
+ * @param debounce_ms Debounce window in milliseconds.
+ * @param read_ctx Reader returning SwitchBankReadResult for each key.
+ * @param ctx Opaque reader context.
+ * @param active_low_mask Active-low mask (bit=1 means active-low).
+ * @param time_fn Optional millisecond time source.
+ * @return SwitchBank<N> instance with runtime polarity.
+ */
+template <size_t N>
+inline SwitchBank<N> makeSwitchBankResultCtxMasked(const uint8_t (&keys)[N],
+                                                   uint16_t debounce_ms,
+                                                   typename SwitchBank<N>::ReadResultFn read_ctx,
+                                                   void *ctx,
+                                                   uint32_t active_low_mask,
+                                                   SwitchBankHandler::TimeFn time_fn = nullptr)
+{
+    return SwitchBank<N>(keys, debounce_ms, active_low_mask, read_ctx, ctx, time_fn);
+}
+
+/**
+ * @brief Create a SwitchBank using one coherent packed electrical acquisition.
+ * @tparam N Number of inputs (1..32).
+ * @param keys Key array retained for API consistency. Packed bit i represents bank input i.
+ * @param debounce_ms Debounce window in milliseconds.
+ * @param read_packed Reader returning all electrical levels in one valid/invalid snapshot.
+ * @param ctx Opaque reader context.
+ * @param time_fn Optional millisecond time source.
+ * @return SwitchBank<N> instance with all inputs active-low.
+ */
+template <size_t N>
+inline SwitchBank<N> makeSwitchBankPacked(const uint8_t (&keys)[N],
+                                          uint16_t debounce_ms,
+                                          typename SwitchBank<N>::PackedReadFn read_packed,
+                                          void *ctx = nullptr,
+                                          SwitchBankHandler::TimeFn time_fn = nullptr)
+{
+    return SwitchBank<N>(keys, debounce_ms, mask_all_active_low<N>(), read_packed, ctx, time_fn);
+}
+
+/**
+ * @brief Create a coherent packed-reader SwitchBank with an explicit runtime polarity mask.
+ * @tparam N Number of inputs (1..32).
+ * @param keys Key array retained for API consistency.
+ * @param debounce_ms Debounce window in milliseconds.
+ * @param read_packed Reader returning all electrical bank inputs in one valid/invalid snapshot.
+ * @param ctx Opaque reader context.
+ * @param active_low_mask Active-low mask (bit=1 means active-low).
+ * @param time_fn Optional millisecond time source.
+ * @return SwitchBank<N> instance with runtime polarity.
+ */
+template <size_t N>
+inline SwitchBank<N> makeSwitchBankPackedMasked(const uint8_t (&keys)[N],
+                                                uint16_t debounce_ms,
+                                                typename SwitchBank<N>::PackedReadFn read_packed,
+                                                void *ctx,
+                                                uint32_t active_low_mask,
+                                                SwitchBankHandler::TimeFn time_fn = nullptr)
+{
+    return SwitchBank<N>(keys, debounce_ms, active_low_mask, read_packed, ctx, time_fn);
+}
+
 // ---- Factories (runtime polarity, reversed bit order) ---- //
 
 /**
@@ -246,7 +332,7 @@ inline SwitchBank<N> makeSwitchBankCtxMasked(const uint8_t (&keys)[N],
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in ms (0 disables).
  * @param read_pin Per-key electrical reader (key → level HIGH/LOW).
- * @param time_fn Optional time source for no-arg update()/sync()/commit().
+ * @param time_fn Optional time source for no-arg update()/sync()/forceCommitForCommissioning().
  * @return SwitchBank<N, -1, true> instance (by value, zero-heap).
  */
 template <size_t N>
@@ -265,7 +351,7 @@ inline SwitchBank<N, -1, true> makeSwitchBankPinsRev(const uint8_t (&keys)[N],
  * @param debounce_ms Debounce window in ms (0 disables).
  * @param read_ctx Context-aware reader (ctx, key) → level HIGH/LOW.
  * @param ctx Opaque context pointer (nullable).
- * @param time_fn Optional time source for no-arg update()/sync()/commit().
+ * @param time_fn Optional time source for no-arg update()/sync()/forceCommitForCommissioning().
  * @return SwitchBank<N, -1, true> instance (by value, zero-heap).
  */
 template <size_t N>
@@ -288,7 +374,7 @@ inline SwitchBank<N, -1, true> makeSwitchBankCtxRev(const uint8_t (&keys)[N],
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in ms (0 disables).
  * @param read_pin Per-key electrical reader (key → level HIGH/LOW).
- * @param time_fn Optional time source for no-arg update()/sync()/commit().
+ * @param time_fn Optional time source for no-arg update()/sync()/forceCommitForCommissioning().
  * @return SwitchBank<N, PolMask, ReverseOrder> instance (by value, zero-heap).
  */
 template <size_t N, int64_t PolMask, bool ReverseOrder = false>
@@ -314,7 +400,7 @@ makeSwitchBankPinsCT(const uint8_t (&keys)[N],
  * @param debounce_ms Debounce window in ms (0 disables).
  * @param read_ctx Context-aware reader (ctx, key) → level HIGH/LOW.
  * @param ctx Opaque context pointer (nullable).
- * @param time_fn Optional time source for no-arg update()/sync()/commit().
+ * @param time_fn Optional time source for no-arg update()/sync()/forceCommitForCommissioning().
  * @return SwitchBank<N, PolMask, ReverseOrder> instance (by value, zero-heap).
  */
 template <size_t N, int64_t PolMask, bool ReverseOrder = false>
@@ -345,11 +431,13 @@ struct SwitchBankBuilder
     const uint8_t (&keys)[N];                   ///< Keys to use (pins/identifiers).
     uint16_t debounce_ms{0};                    ///< Debounce in ms (0 disables).
     uint32_t mask{mask_all_active_low<N>()};    ///< Active-low mask (bit=1 means active-low).
-    SwitchBankHandler::TimeFn time_fn{nullptr}; ///< Optional time source for no-arg update()/sync()/commit().
+    SwitchBankHandler::TimeFn time_fn{nullptr}; ///< Optional time source for no-arg update()/sync()/forceCommitForCommissioning().
 
-    typename SwitchBank<N>::ReadPinFn read_pin{nullptr}; ///< Per-key reader (fast path).
-    typename SwitchBank<N>::ReadFn read_ctx{nullptr};    ///< Context-aware reader.
-    void *ctx{nullptr};                                  ///< Reader context (nullable).
+    typename SwitchBank<N>::ReadPinFn read_pin{nullptr};       ///< Legacy per-key reader.
+    typename SwitchBank<N>::ReadFn read_ctx{nullptr};          ///< Legacy context-aware reader.
+    typename SwitchBank<N>::ReadResultFn read_result{nullptr}; ///< Validity-aware context reader.
+    typename SwitchBank<N>::PackedReadFn read_packed{nullptr}; ///< Coherent packed reader.
+    void *ctx{nullptr};                                        ///< Reader context (nullable).
 
     /**
      * @brief Construct a builder bound to a key array.
@@ -414,7 +502,7 @@ struct SwitchBankBuilder
     }
 
     /**
-     * @brief Inject a time source for no-arg update()/sync()/commit().
+     * @brief Inject a time source for no-arg update()/sync()/forceCommitForCommissioning().
      * @param tf Time function returning milliseconds.
      * @return *this for chaining.
      */
@@ -433,6 +521,8 @@ struct SwitchBankBuilder
     {
         read_pin = rp;
         read_ctx = nullptr;
+        read_result = nullptr;
+        read_packed = nullptr;
         ctx = nullptr;
         return *this;
     }
@@ -448,16 +538,50 @@ struct SwitchBankBuilder
         read_ctx = rc;
         ctx = c;
         read_pin = nullptr;
+        read_result = nullptr;
+        read_packed = nullptr;
         return *this;
     }
 
     /**
-     * @brief Check whether a reader has been configured.
-     * @return true if either a per-key or context-aware reader is set.
+     * @brief Use a validity-aware context reader.
+     * @param rr Reader returning a valid/invalid electrical sample for each key.
+     * @param c Context pointer (nullable).
+     * @return *this for chaining.
+     */
+    SwitchBankBuilder &withResultReader(typename SwitchBank<N>::ReadResultFn rr, void *c = nullptr)
+    {
+        read_result = rr;
+        ctx = c;
+        read_pin = nullptr;
+        read_ctx = nullptr;
+        read_packed = nullptr;
+        return *this;
+    }
+
+    /**
+     * @brief Use one coherent packed hardware reader.
+     * @param rp Reader returning all electrical bank inputs in one snapshot.
+     * @param c Context pointer (nullable).
+     * @return *this for chaining.
+     */
+    SwitchBankBuilder &withPackedReader(typename SwitchBank<N>::PackedReadFn rp, void *c = nullptr)
+    {
+        read_packed = rp;
+        ctx = c;
+        read_pin = nullptr;
+        read_ctx = nullptr;
+        read_result = nullptr;
+        return *this;
+    }
+
+    /**
+     * @brief Check whether any supported reader has been configured.
      */
     bool hasReader() const noexcept
     {
-        return (read_pin != nullptr) || (read_ctx != nullptr);
+        return (read_pin != nullptr) || (read_ctx != nullptr) ||
+               (read_result != nullptr) || (read_packed != nullptr);
     }
 
     /**
@@ -490,7 +614,25 @@ struct SwitchBankBuilder
 #endif
             return b;
         }
-        SwitchBank<N> b(keys, debounce_ms, mask, read_ctx, ctx, time_fn);
+        if (read_ctx)
+        {
+            SwitchBank<N> b(keys, debounce_ms, mask, read_ctx, ctx, time_fn);
+#ifdef SWITCHBANK_ENABLE_COMMIT_CALLBACK
+            if (on_commit_)
+                b.setOnCommit(on_commit_);
+#endif
+            return b;
+        }
+        if (read_result)
+        {
+            SwitchBank<N> b(keys, debounce_ms, mask, read_result, ctx, time_fn);
+#ifdef SWITCHBANK_ENABLE_COMMIT_CALLBACK
+            if (on_commit_)
+                b.setOnCommit(on_commit_);
+#endif
+            return b;
+        }
+        SwitchBank<N> b(keys, debounce_ms, mask, read_packed, ctx, time_fn);
 #ifdef SWITCHBANK_ENABLE_COMMIT_CALLBACK
         if (on_commit_)
             b.setOnCommit(on_commit_);

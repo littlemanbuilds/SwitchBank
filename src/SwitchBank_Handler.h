@@ -1,16 +1,17 @@
 /**
  * MIT License
  *
- * @brief Abstract base class for an N-bit switch bank (DIP/slide/rocker).
+ * @brief Abstract interface for polling and reading a debounced packed switch bank.
  *
  * @file SwitchBank_Handler.h
  * @author Little Man Builds (Darren Osborne)
  * @date 2025-10-01
- * @copyright Copyright © 2025 Little Man Builds
+ * @copyright Copyright © 2026 Little Man Builds
  */
 
 #pragma once
 
+#include "SwitchBank_Compatibility.h"
 #include <stdint.h>
 
 #if defined(ARDUINO)
@@ -18,41 +19,40 @@
 #endif
 
 /**
- * @class SwitchBank_Handler
- * @brief Interface for polling and reading a debounced, packed switch value.
+ * @class SwitchBankHandler
+ * @brief Minimal polymorphic interface for a packed switch source.
  *
- * Implementations provide debouncing and change detection. The packed value
- * uses LSB-first ordering (bit 0 == switch index 0). Time is provided by an
- * injected millisecond source (see TimeFn).
+ * Concrete SwitchBank instances add polarity, acquisition validity, debouncing, edge metadata,
+ * and freshness counters. The base remains intentionally small so applications that only need a
+ * generic packed switch provider do not inherit hardware-specific policy.
  */
 class SwitchBankHandler
 {
 public:
-    // Millisecond time source function pointer (injected).
+    /// @brief Millisecond time source function pointer.
     using TimeFn = uint32_t (*)();
 
-    /**
-     * @brief Virtual destructor for safe polymorphic deletion.
-     */
+    /// @brief Virtual destructor for safe polymorphic deletion.
     virtual ~SwitchBankHandler() = default;
 
     /**
      * @brief Poll hardware and update internal state.
-     * @param now_ms Milliseconds timestamp from the injected time source.
-     * @return true If a new stable packed value was committed.
-     * @return false If nothing changed/committed.
+     * @param now_ms Current timestamp in milliseconds.
+     * @return true when the stable packed value changed.
      */
     virtual bool update(uint32_t now_ms) = 0;
 
     /**
-     * @brief Convenience overload that uses the configured time source.
-     * @return true If a new stable packed value was committed.
-     * @return false If nothing changed, or no time source is available.
+     * @brief Poll using the configured clock or Arduino millis().
+     * @return true when the stable packed value changed.
+     * @return false when no transition occurred or no clock is available.
      */
     bool update()
     {
-        if (time_fn_)
+        if (time_fn_ != nullptr)
+        {
             return update(time_fn_());
+        }
 
 #if defined(ARDUINO)
         return update(::millis());
@@ -61,66 +61,31 @@ public:
 #endif
     }
 
-    /**
-     * @brief Get the current committed packed value (lower N bits).
-     * @return Packed value. Bit-to-input mapping is implementation-defined
-     *         (e.g., may support reversed packing).
-     */
+    /// @brief Current stable packed value.
     virtual uint32_t value() const noexcept = 0;
 
-    /**
-     * @brief Get the current committed packed value without side effects.
-     * @return Packed current value snapshot.
-     */
+    /// @brief Current stable packed value without side effects.
     virtual uint32_t peekValue() const noexcept { return value(); }
 
-    /**
-     * @brief Get the previous committed packed value.
-     * @return Packed value prior to the last commit.
-     */
+    /// @brief Previous stable value associated with retained edge metadata.
     virtual uint32_t prevValue() const noexcept = 0;
 
-    /**
-     * @brief Whether the packed value changed since the last commit.
-     * @return true If the value changed on the previous commit.
-     * @return false Otherwise.
-     */
+    /// @brief Whether a stable transition is currently latched.
     virtual bool changed() const noexcept = 0;
 
-    /**
-     * @brief Clear only the internal 'changed' latch.
-     *
-     * Edge masks are derived from current/previous values, so changedMask(),
-     * risingMask(), and fallingMask() may still describe the last committed
-     * transition until the next commit, sync(), or clearEdges().
-     */
+    /// @brief Explicitly clear the changed latch.
     virtual void clearChanged() noexcept = 0;
 
-    /**
-     * @brief Clear current/previous edge masks when supported by the implementation.
-     *
-     * The base implementation is a no-op so existing handler implementations
-     * remain source-compatible. Concrete SwitchBank instances collapse
-     * previous == current.
-     */
+    /// @brief Clear retained edge masks without changing current state.
     virtual void clearEdges() noexcept {}
 
-    /**
-     * @brief Number of switches in the concrete bank (N).
-     * @return Switch count (1..32).
-     */
+    /// @brief Number of switches in the concrete bank.
     virtual uint8_t size() const noexcept = 0;
 
-    /**
-     * @brief Bit mask of changes between current and previous values.
-     * @return Change mask.
-     */
+    /// @brief Retained transition mask.
     virtual uint32_t changedMask() const noexcept { return peekValue() ^ prevValue(); }
 
-    /**
-     * @brief Bits that rose 0→1 on the last commit.
-     * @return Packed rising-edge mask.
-     */
+    /// @brief Retained OFF->ON mask.
     virtual uint32_t risingMask() const noexcept
     {
         const uint32_t cur = peekValue();
@@ -128,10 +93,7 @@ public:
         return (~prev) & cur;
     }
 
-    /**
-     * @brief Bits that fell 1→0 on the last commit.
-     * @return Packed falling-edge mask.
-     */
+    /// @brief Retained ON->OFF mask.
     virtual uint32_t fallingMask() const noexcept
     {
         const uint32_t cur = peekValue();
@@ -139,28 +101,44 @@ public:
         return prev & (~cur);
     }
 
+    // ---- Optional health/freshness contract ---- //
+
+    /**
+     * @brief Whether the most recent hardware acquisition succeeded.
+     * @note Base implementations that do not expose validity return false.
+     */
+    virtual bool valid() const noexcept { return false; }
+
+    /// @brief Timestamp of the latest successful acquisition, when supported.
+    virtual uint32_t sampleMs() const noexcept { return 0u; }
+
+    /// @brief Successful acquisition sequence, when supported.
+    virtual uint32_t sequence() const noexcept { return 0u; }
+
+    /// @brief Stable transition sequence, when supported.
+    virtual uint32_t changeSequence() const noexcept { return 0u; }
+
 protected:
     /**
-     * @brief Construct with an optional time function.
+     * @brief Construct with an optional time source.
      * @param tf Time source function pointer (nullable).
      */
-    explicit SwitchBankHandler(TimeFn tf = nullptr)
+    explicit SwitchBankHandler(TimeFn tf = nullptr) noexcept
         : time_fn_{tf} {}
 
-    /**
-     * @brief Update the injected time function.
-     * @param tf Time source function pointer (nullable).
-     */
-    void setTimeFn(TimeFn tf) { time_fn_ = tf; }
+    /// @brief Replace the injected time source.
+    void setTimeFn(TimeFn tf) noexcept { time_fn_ = tf; }
 
     /**
-     * @brief Read current time in milliseconds.
-     * @return Milliseconds timestamp, or 0 if unavailable.
+     * @brief Read current time from the configured source.
+     * @return Timestamp in milliseconds, or zero when unavailable on a native build.
      */
-    uint32_t now_ms() const
+    uint32_t now_ms() const noexcept
     {
-        if (time_fn_)
+        if (time_fn_ != nullptr)
+        {
             return time_fn_();
+        }
 
 #if defined(ARDUINO)
         return ::millis();
@@ -170,5 +148,5 @@ protected:
     }
 
 private:
-    TimeFn time_fn_{nullptr}; ///< Injected millisecond time source.
+    TimeFn time_fn_{nullptr}; ///< Injected millisecond clock.
 };

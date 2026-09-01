@@ -1,12 +1,12 @@
 {
   "name": "SwitchBank",
-  "version": "1.1.0",
-  "description": "Generic N-bit switch bank with per-bit debounce, compile-time/runtime polarity, latch modes, scan throttling, pluggable readers (GPIO/expanders), POD snapshots, rising/falling edge masks, and an optional on-commit callback. ESP32-S3 is the primary hardware-tested target; other configured targets are intended compile-validation targets. Constructors/factories are side-effect free; call sync() once after IO init for a clean baseline.",
-  "keywords": "switch,switchbank,dip,debounce,input,gpio,mcp23017,expander,latch,edge,snapshot,callback,builder,arduino,pullup,pulldown,sync,cross-core",
+  "version": "1.2.0",
+  "description": "Header-only 1..32-bit switch-bank library with per-bit debounce, polarity normalization, explicit acquisition validity, coherent packed reads, freshness/change metadata, durable sequences, and Arduino GPIO helpers.",
+  "keywords": "switch,switchbank,dip,debounce,input,gpio,mcp23017,expander,selector,validity,packed,edge,snapshot,arduino",
   "license": "MIT",
   "authors": [
     {
-      "name": "Little Man Builds",
+      "name": "Little Man Builds (Darren Osborne)",
       "email": "littlemanbuilds@gmail.com",
       "maintainer": true
     }
@@ -24,8 +24,8 @@
     "espressif32",
     "espressif8266",
     "raspberrypi",
-    "teensy",
-    "ststm32"
+    "ststm32",
+    "teensy"
   ],
   "headers": [
     "SwitchBank.h",
@@ -36,12 +36,14 @@
   ],
   "build": {
     "includeDir": "src",
-    "srcFilter": ["+<src/>"]
+    "srcFilter": [
+      "+<src/>"
+    ]
   },
   "examples": [
-    "examples/01_Simple_DIP_3-bit/01_Simple_DIP_3-bit.ino",
-    "examples/02_Mode_Names_3-bit/02_Mode_Names_3-bit.ino",
-    "examples/03_Port_Expander_8-bit/03_Port_Expander_8-bit.ino",
-    "examples/04_Port_Expander_Cached_Read/04_Port_Expander_Cached_Read.ino"
+    "examples/01_SimpleDIP3Bit/01_SimpleDIP3Bit.ino",
+    "examples/02_ModeNames3Bit/02_ModeNames3Bit.ino",
+    "examples/03_PortExpander8Bit/03_PortExpander8Bit.ino",
+    "examples/04_PortExpanderCachedRead/04_PortExpanderCachedRead.ino"
   ]
 }

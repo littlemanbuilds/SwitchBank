@@ -1,41 +1,120 @@
 # SwitchBank
 
-Generic **N-bit switch bank** library for Arduino-class targets, developed with ESP32-S3 hardware as the primary reference target.
+**SwitchBank** is a small, header-only Arduino/C++ library for reading **1 to 32 physical switches as one debounced packed value**.
 
-SwitchBank is a header-only input-state engine for DIP/slide/rocker switch banks with:
+It is useful for DIP banks, slide switches, rotary/gear contact groups, mode selectors, button-style maintained contacts, and GPIO-expander inputs where the application wants a clean logical state instead of repeating polarity, debounce, and edge-detection code.
 
-- per-bit debounce
-- active-low/active-high polarity control
-- edge detection helpers (`rose`, `fell`, masks)
-- optional scan throttling
-- compile-time or runtime polarity paths
-- optional reversed bit order
-- optional commit callback
+Version **1.2.0** keeps the simple v1.x usage model, while adding the missing reliability contract needed for larger embedded systems: failed acquisitions no longer become switch states, coherent packed hardware reads are supported, freshness is separate from state-change time, and resynchronization no longer resets the sequence history.
 
-The core is device-agnostic. You provide a reader function that returns an electrical level (`HIGH` or `LOW`) for each key.
+ESP32-S3 remains the primary project target, but the core is deliberately portable and allocation-free.
 
-An optional Arduino wrapper (`SwitchBank_Arduino.h`) adds:
-
-- automatic `pinMode(...)`
-- `digitalRead(...)` integration
-- `millis()` integration
-
-> Author: Little Man Builds  
-> License: MIT
+The public version is available through the package-specific `SWITCHBANK_VERSION*` macros so SwitchBank can coexist cleanly with other libraries.
 
 ---
 
-## Highlights
+## Contents
 
-- **Header-only core** (no `.cpp` implementation units required)
-- **N = 1..32** switches per bank
-- **Per-bit debounce** (raw + stable tracking per input)
-- **Edge helpers** (`rose(i)`, `fell(i)`, `risingMask()`, `fallingMask()`)
-- **State snapshots** (`snapshot()`)
-- **Latch behavior control** (`ManualClear`, `ClearOnRead`)
-- **Scan throttling** (`setMinPollMs(...)`) for slow buses
-- **Factory helpers + fluent builder**
-- **Cross-core mask helpers** (array/variadic, optional `initializer_list`)
+- [Why SwitchBank exists](#why-switchbank-exists)
+- [Design boundaries](#design-boundaries)
+- [Installation](#installation)
+- [Supported targets](#supported-targets)
+- [Beginner path](#beginner-path)
+- [Core concepts](#core-concepts)
+- [Reader choices](#reader-choices)
+- [Validity and freshness](#validity-and-freshness)
+- [Debouncing and recovery](#debouncing-and-recovery)
+- [Edges and durable change tracking](#edges-and-durable-change-tracking)
+- [Polarity and bit order](#polarity-and-bit-order)
+- [Coherent packed reads](#coherent-packed-reads)
+- [Runtime configuration](#runtime-configuration)
+- [Examples](#examples)
+- [Testing](#testing)
+- [Public API guide](#public-api-guide)
+- [Migration from v1.1](#migration-from-v11)
+- [Project integration guidance](#project-integration-guidance)
+- [Repository structure](#repository-structure)
+- [Limitations](#limitations)
+- [License](#license)
+
+---
+
+## Why SwitchBank exists
+
+A group of maintained switches looks simple until the application needs to answer all of these correctly:
+
+- Is electrical `LOW` logically ON or OFF?
+- How long must the contact remain stable before it is accepted?
+- Did bit 2 rise, fall, or remain unchanged?
+- Is the current packed value fresh even when the switches have not moved for ten minutes?
+- What happens if an I/O expander read fails?
+- Can a multi-contact selector be read as one coherent hardware state?
+- Did a consumer miss one or more transitions between two observations?
+- What happens when the input source is explicitly resynchronized after a disconnect?
+
+SwitchBank centralizes those mechanics while leaving application meaning outside the library.
+
+For example, SwitchBank can report:
+
+```text
+stable packed state = 0b0110
+valid               = true
+sample sequence      = 4821
+change sequence      = 17
+```
+
+It deliberately does **not** decide whether `0b0110` means `D1`, `SPORT`, `REMOTE`, or an invalid machine state. That belongs to the consuming application.
+
+### What v1.2 specifically improves
+
+Version 1.2 directly addresses the architecture audit findings:
+
+- a missing reader now reports `MissingReader` instead of making every active-low input appear ON;
+- validity-aware readers can reject a failed hardware acquisition;
+- failed reads retain the last stable state rather than synthesizing all-zero/all-one data;
+- one coherent packed-reader callback can acquire an entire selector from one hardware snapshot;
+- `sample_ms` is now distinct from `change_ms`;
+- `sequence` advances on every successful sample;
+- `change_sequence` advances only on stable state transitions;
+- successful `sync()` increments a separate `generation` instead of resetting sequence history;
+- time spent with invalid hardware cannot satisfy a debounce window;
+- explicit `consumeChanged()` and `consumeEdges()` remove the need for hidden clear-on-read behaviour;
+- immediate debounce bypass is named `forceCommitForCommissioning()`;
+- the old `commit()` remains only as a deprecated v1.x compatibility alias.
+
+---
+
+## Design boundaries
+
+SwitchBank is intentionally narrow.
+
+It **does** provide:
+
+- 1..32 input packing;
+- active-low/active-high normalization;
+- per-bit debounce;
+- optional reversed output bit order;
+- hardware acquisition validity;
+- coherent packed input acquisition;
+- stable value and edge masks;
+- acquisition and change timestamps;
+- acquisition/change sequence counters;
+- explicit resynchronization generations;
+- optional minimum polling interval;
+- Arduino GPIO convenience wrappers;
+- zero dynamic allocation.
+
+It **does not** provide:
+
+- I2C/SPI drivers;
+- MCP23017 ownership;
+- machine-mode or gear decoding;
+- persistence;
+- an event queue;
+- task scheduling;
+- safety policy;
+- cross-library dependencies.
+
+This boundary is intentional. A standalone SwitchBank can be used in a toy, machine panel, robot, vehicle, or test fixture without importing any other LMB library.
 
 ---
 
@@ -43,524 +122,947 @@ An optional Arduino wrapper (`SwitchBank_Arduino.h`) adds:
 
 ### Arduino IDE
 
-- Install from Library Manager (if published), or
-- Add as ZIP from this repository.
+Install the library in the Arduino Library Manager when released, or place the repository in your Arduino `libraries` directory.
+
+For the easiest GPIO path:
+
+```cpp
+#include <SwitchBank_Arduino.h>
+```
+
+For custom readers or I/O expanders:
+
+```cpp
+#include <SwitchBank.h>
+#include <SwitchBank_Factory.h>
+```
 
 ### PlatformIO
 
-Use as a library dependency or local project library.
+Use the repository as a project dependency, or install it into the project `lib/` directory.
 
-Core library dependencies: **none**.  
-Some expander examples use:
-
-- `adafruit/Adafruit MCP23017 Arduino Library`
+The library is header-only, so there is no runtime library initialization step beyond configuring the hardware and calling `sync()`.
 
 ---
 
-## Supported and Tested Targets
+## Supported targets
 
-SwitchBank is written for Arduino-class C++ cores. The core library is intentionally device-agnostic: it reads whatever electrical levels your reader function returns. The examples and current hardware validation are ESP32-focused.
+The library core is standard C++11-compatible code with small Arduino adapters.
 
-| Target / feature | Status |
-| --- | --- |
-| ESP32-S3 (`esp32-s3-devkitc-1`) | Primary development and hardware-tested target. GPIO examples use ESP32-S3-style pin choices; change pins for your board. |
-| MCP23017 examples | Arduino + I2C examples using the Adafruit MCP23017 library. They are not ESP32-only, but I2C pins, pullups, and bus setup are board-specific. |
-| AVR, megaAVR, ESP8266, RP2040, SAMD, STM32, Teensy | PlatformIO compile-validation targets in `platformio.ini`. Treat these as build coverage unless you have verified hardware on that board. |
-| `PinModeCfg::Pulldown` | Uses `INPUT_PULLDOWN` only when the selected Arduino core defines it. ESP32 cores provide internal pulldown support on many GPIOs; other cores may fall back to plain `INPUT`. |
+The v1.2.0 release was locally compile-validated with PlatformIO for:
 
-No portability is faked: missing hardware pull directions are not emulated. Use an external resistor when the target board does not provide the pullup/pulldown mode your wiring expects.
+- ESP32-S3 DevKitC-1;
+- ESP32;
+- ESP8266;
+- RP2040 Pico;
+- SAMD/MKR Zero;
+- Nano Every;
+- AVR Uno;
+- Teensy 4.1;
+- STM32 Blue Pill.
 
----
+The public examples are primarily written around **ESP32-S3** usage.
 
-## Core Concepts
+Cross-platform compilation is not the same as hardware validation. External pull resistors, available GPIOs, `INPUT_PULLDOWN`, I2C behaviour, and electrical characteristics still depend on the board.
 
-- **Key**: the identifier stored in your key array (GPIO number, expander pin index, etc.)
-- **Logical index**: `0..N-1`, position in the packed switch bank
-- **Electrical level**: what your reader returns (`true` for HIGH, `false` for LOW)
-- **Logical ON/OFF**: normalized state after polarity is applied
-- **Committed state**: debounced stable state
-
-### Reader Contract
-
-Reader functions must return the **electrical** level:
-
-- `true` => pin reads HIGH
-- `false` => pin reads LOW
-
-SwitchBank applies polarity to map electrical levels to logical ON/OFF.
-
-### DIP Switch Polarity Table
-
-A common DIP switch wiring is active-low: one side of the switch goes to `GND`, the other side goes to the input pin, and the pin uses `INPUT_PULLUP`.
-
-| Wiring style | Switch physical state | Electrical level read by reader | SwitchBank polarity | Logical state |
-| --- | --- | --- | --- | --- |
-| DIP to `GND` with `INPUT_PULLUP` | Open / off | `HIGH` (`true`) | `Polarity::ActiveLow` or mask bit `1` | OFF / bit `0` |
-| DIP to `GND` with `INPUT_PULLUP` | Closed / on | `LOW` (`false`) | `Polarity::ActiveLow` or mask bit `1` | ON / bit `1` |
-| DIP to `VCC` with pulldown or external resistor | Open / off | `LOW` (`false`) | `Polarity::ActiveHigh` or mask bit `0` | OFF / bit `0` |
-| DIP to `VCC` with pulldown or external resistor | Closed / on | `HIGH` (`true`) | `Polarity::ActiveHigh` or mask bit `0` | ON / bit `1` |
+GitHub Actions carries the same portable PlatformIO matrix so target compilation remains guarded after release.
 
 ---
 
-## Lifecycle: `sync()`, `update()`, `commit()`
+## Beginner path
 
-Constructors/factories are intentionally side-effect free (no reads, no time calls).
+This section is the shortest route from a new library install to a working switch bank.
 
-Typical startup flow:
+### 1. Wire three switches
 
-1. Configure IO (`pinMode`, expander init, bus init).
-2. Call `sync()` once to establish baseline.
-3. Call `update()` repeatedly in `loop()`/task.
+For the first example, connect one side of each maintained switch to GND and the other sides to three available ESP32-S3 GPIO pins.
 
-### `sync()`
+The examples use:
 
-- reads hardware now
-- sets `current == previous`
-- clears `changed()`
-- resets debounce history
+```cpp
+const uint8_t DIP_PINS[3] = {35, 36, 37};
+```
 
-Use this on boot, after IO/expander setup, and after polarity reconfiguration. It is the normal way to establish a baseline before the first `update()` so the initial switch positions do not look like fake edges.
+With `INPUT_PULLUP`:
 
-### `update()`
+```text
+switch open   -> GPIO HIGH -> logical OFF
+switch closed -> GPIO LOW  -> logical ON
+```
 
-- runs debounce integration
-- commits only when stable value changes
-- returns `true` only when a commit occurred
+That is an **active-low** input.
 
-Time-source behavior:
-
-- `update(now_ms)` always uses your explicit timestamp
-- no-arg `update()` uses injected time source when provided
-- on Arduino builds, no-arg `update()` falls back to `millis()` if no time source is injected
-- on non-Arduino builds without a time source, no-arg `update()` returns `false`
-
-### `commit()`
-
-- bypasses debounce and commits immediate reading
-- may generate edges if value differs
-
-Use only when you explicitly want immediate commit behavior.
-
----
-
-## Quick Start: Arduino Wrapper
+### 2. Create the bank
 
 ```cpp
 #include <Arduino.h>
 #include <SwitchBank_Arduino.h>
 
-// ESP32-S3 example pins. Change these to suitable GPIOs for your board.
-const uint8_t DIP_PINS[3] = {25, 26, 27};
+const uint8_t DIP_PINS[3] = {35, 36, 37};
 
 auto dip = makeSwitchBankArduino<3>(
     DIP_PINS,
-    20,                  // debounce ms
-    Polarity::ActiveLow, // LOW means logical ON
-    PinModeCfg::Pullup   // INPUT_PULLUP
-);
+    20,
+    Polarity::ActiveLow,
+    PinModeCfg::Pullup);
+```
 
+`20` is the debounce window in milliseconds.
+
+### 3. Establish the boot baseline
+
+Call `sync()` after the input hardware is ready:
+
+```cpp
 void setup()
 {
     Serial.begin(115200);
-
-    // Important: baseline after pinMode setup, before the first update().
-    // This prevents startup switch positions from being reported as edges.
     dip.sync();
 }
+```
 
+`sync()` reads the current hardware state without creating fake boot edges.
+
+For Arduino GPIO the reader itself cannot normally report `digitalRead()` failure, so beginner sketches may ignore the return value. For external buses, check it.
+
+### 4. Poll the switches
+
+```cpp
 void loop()
 {
     if (dip.update())
     {
-        for (uint8_t i = 0; i < dip.size(); ++i)
-        {
-            if (dip.rose(i))
-            {
-                Serial.print("Switch ");
-                Serial.print(i + 1);
-                Serial.println(" ON");
-            }
-
-            if (dip.fell(i))
-            {
-                Serial.print("Switch ");
-                Serial.print(i + 1);
-                Serial.println(" OFF");
-            }
-        }
+        Serial.println(dip.peekValue());
     }
 }
 ```
 
-Cross-platform note:
+`update()` returns `true` only when the **stable debounced packed value changes**.
 
-- `PinModeCfg::Pulldown` maps to `INPUT_PULLDOWN` when available.
-- If the selected core does not define `INPUT_PULLDOWN`, wrapper falls back to `INPUT`.
-- Example GPIO numbers are ESP32-oriented; choose pins that exist and support the selected mode on your board.
+The packed value for three switches is `0..7`.
+
+### 5. Read individual edges
+
+```cpp
+if (dip.rose(0))
+{
+    Serial.println("Switch 1 turned ON");
+}
+
+if (dip.fell(0))
+{
+    Serial.println("Switch 1 turned OFF");
+}
+```
+
+### 6. Understand freshness before using external hardware
+
+For GPIO-only beginner projects, `peekValue()` is usually enough.
+
+For an I2C/SPI expander or any selector that matters to machine authority, also use:
+
+```cpp
+if (bank.valid())
+{
+    const uint32_t value = bank.peekValue();
+    const uint32_t sample_time = bank.sampleMs();
+}
+```
+
+A retained value is **not automatically proof that the hardware is still healthy**.
+
+### 7. Use a packed reader for multi-contact selectors
+
+A multi-contact gear or mode selector should ideally come from one hardware snapshot rather than several independent bus transactions.
+
+That is the point of `makeSwitchBankPacked()` and Example 04.
 
 ---
 
-## Quick Start: Core + MCP23017
+## Core concepts
+
+### Electrical level
+
+Readers provide the actual hardware level:
+
+```text
+true  = HIGH
+false = LOW
+```
+
+SwitchBank then applies the configured polarity.
+
+### Logical value
+
+The library exposes logical ON/OFF bits after polarity normalization.
+
+### Stable value
+
+`peekValue()` is the most recently accepted debounced state.
+
+### Sample
+
+A sample is one complete successful hardware acquisition.
+
+### Change
+
+A change occurs only when the stable packed state transitions to a different value.
+
+These are deliberately separate concepts in v1.2.
+
+---
+
+## Reader choices
+
+SwitchBank supports three levels of reader contract.
+
+### 1. Simple bool reader
+
+Best for direct GPIO or hardware APIs that cannot report read failure:
 
 ```cpp
-#include <Arduino.h>
-#include <Wire.h>
-#include <Adafruit_MCP23X17.h>
-#include <SwitchBank.h>
-#include <SwitchBank_Factory.h>
+bool readPin(void *ctx, uint8_t key);
+```
 
-const uint8_t MCP_ADDR = 0x20;
-const uint8_t EXP_PINS[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+A configured bool reader is assumed to succeed. Therefore **do not hide an I2C error by returning `false`** unless LOW really is the measured electrical level.
 
-Adafruit_MCP23X17 mcp;
+### 2. Validity-aware per-key reader
 
-uint32_t now_ms() { return (uint32_t)millis(); }
-bool readExpander(uint8_t pin) { return mcp.digitalRead(pin) == HIGH; } // electrical level
+Use this when each input acquisition can fail:
 
-static auto bank = makeSwitchBankPins<8>(EXP_PINS, 20, readExpander, now_ms);
-
-void setup()
+```cpp
+SwitchBankReadResult readPin(void *ctx, uint8_t key)
 {
-    Serial.begin(115200);
-    Wire.begin();
-
-    if (!mcp.begin_I2C(MCP_ADDR))
+    if (!hardwareReadSucceeded())
     {
-        Serial.println("MCP23017 not found");
-        while (true) { delay(1000); }
+        return SwitchBankReadResult::failure();
     }
 
-    for (uint8_t i = 0; i < 8; ++i)
-        mcp.pinMode(EXP_PINS[i], INPUT_PULLUP);
-
-    bank.setMinPollMs(5);
-
-    // Important: baseline after expander setup, before the first update().
-    bank.sync(now_ms());
+    return SwitchBankReadResult::success(levelIsHigh());
 }
+```
 
-void loop()
+Factory:
+
+```cpp
+auto bank = makeSwitchBankResultCtx<4>(keys, 20, readPin, &context, millisFn);
+```
+
+If any input in the bank fails, the whole acquisition is rejected and stable state is retained.
+
+### 3. Coherent packed reader
+
+Preferred for multi-contact selectors on an expander:
+
+```cpp
+SwitchBankPackedReadResult readAll(void *ctx)
 {
-    if (bank.update(now_ms()))
-    {
-        // Handle changes...
-    }
+    const uint32_t electrical_levels = readOneHardwareSnapshot();
+    return SwitchBankPackedReadResult::success(electrical_levels);
 }
 ```
 
----
-
-## Example Sketches
-
-- `examples/01_Simple_DIP_3-bit/01_Simple_DIP_3-bit.ino`
-  - Basic Arduino wrapper usage and edge printing.
-- `examples/02_Mode_Names_3-bit/02_Mode_Names_3-bit.ino`
-  - Mapping packed values to mode names.
-- `examples/03_Port_Expander_8-bit/03_Port_Expander_8-bit.ino`
-  - Direct MCP23017 per-pin reads.
-- `examples/04_Port_Expander_Cached_Read/04_Port_Expander_Cached_Read.ino`
-  - Cached expander reads (one bus read per loop).
-
----
-
-## Public API Summary
-
-### Core Type
+Factory:
 
 ```cpp
-template <size_t N, int64_t PolarityMask = -1, bool ReverseOrder = false>
-class SwitchBank;
+auto bank = makeSwitchBankPacked<4>(keys, 20, readAll, &context, millisFn);
 ```
 
-- `N`: number of switches (`1..32`)
-- `PolarityMask`:
-  - `-1` => runtime polarity mask
-  - `>= 0` => compile-time active-low mask
-- `ReverseOrder`:
-  - `false` => `keys[0] -> bit0`
-  - `true` => reversed bit packing
+Bit `i` returned by the packed reader represents **bank input `i` before polarity normalization and before optional ReverseOrder packing**.
 
-### Key Methods (Core)
+The callback therefore performs exactly one logical bank acquisition.
 
-- lifecycle: `sync`, `update`, `commit`
-- state: `value`, `peekValue`, `prevValue`, `changed`
-- edges: `rose`, `fell`, `changedMask`, `risingMask`, `fallingMask`, `clearEdges`
-- config: `setDebounceMs`, `setMinPollMs`, `setLatchMode`, `setTimeSource`
-- polarity: `setActiveLowMask`, `activeLowMask`
-- metadata: `size`, `kSize`, `lastCommitMs`, `changeCount`
-- helpers: `value8`, `changedMask8` (only when `N <= 8`)
-- snapshot: `snapshot`
-- optional callback API (when `SWITCHBANK_ENABLE_COMMIT_CALLBACK` is defined): `setOnCommit`
+---
 
-### Factories (`SwitchBank_Factory.h`)
+## Validity and freshness
 
-- runtime polarity:
-  - `makeSwitchBankPins`
-  - `makeSwitchBankCtx`
-  - `makeSwitchBankPinsMasked`
-  - `makeSwitchBankCtxMasked`
-- reversed runtime bit order:
-  - `makeSwitchBankPinsRev`
-  - `makeSwitchBankCtxRev`
-- compile-time polarity (+ optional reverse):
-  - `makeSwitchBankPinsCT`
-  - `makeSwitchBankCtxCT`
+A stable selector can remain unchanged for hours. Its last **change** time is therefore not a useful freshness signal.
 
-### Builder (`SwitchBankBuilder<N>`)
-
-Fluent runtime-polarity construction with:
-
-- `withDebounce`
-- `withAllActiveLow` / `withAllActiveHigh`
-- `withActiveLowMask` / `withActiveHighIndices`
-- `withTime`
-- `withReader` (pin reader or context reader)
-- `build`
-- optional callback hookup (when `SWITCHBANK_ENABLE_COMMIT_CALLBACK` is defined): `onCommit`
-
-Important:
-
-- configure a reader before `build()`
-- in debug builds, `build()` asserts if no reader is configured
-
-### Arduino Wrapper (`SwitchBank_Arduino.h`)
-
-- `makeSwitchBankArduino<N>(...)` returns `SwitchBankArduino<N>` (runtime polarity).
-- `core()` provides access to the underlying `SwitchBank<N, PolarityMask, ReverseOrder>`.
-- For compile-time polarity/reversed order with wrapper ergonomics, instantiate directly:
+SwitchBank v1.2 exposes separate metadata:
 
 ```cpp
-const uint8_t PINS[8] = {2, 3, 4, 5, 6, 7, 8, 9};
-SwitchBankArduino<8, 0xFF, true> bank(
-    PINS,
-    20,
-    Polarity::ActiveLow,
-    PinModeCfg::Pullup
-);
+const SwitchBankStatus st = bank.status();
 ```
 
----
+Important fields:
 
-## Polarity Masks
+| Field | Meaning |
+|---|---|
+| `configured` | A hardware reader callback is installed |
+| `has_sample` | At least one successful acquisition has occurred |
+| `valid` | The most recent attempted acquisition succeeded |
+| `error` | Latest acquisition error |
+| `sample_ms` | Last successful hardware acquisition |
+| `attempt_ms` | Last attempted hardware acquisition |
+| `error_ms` | Last failed hardware acquisition |
+| `sequence` | Every successful acquisition |
+| `change_ms` | Last stable state transition |
+| `change_sequence` | Stable state transitions only |
+| `generation` | Successful explicit resynchronizations |
 
-Mask bit semantics:
+### Missing reader behaviour
 
-- bit = `1` => active-low
-- bit = `0` => active-high
-
-Helpers:
-
-- `mask_all_active_low<N>()`
-- `mask_all_active_high<N>()`
-- `mask_from_active_high_indices<N, K>(array)`
-- `mask_from_active_high_indices<N>(idx0, idx1, ...)` (portable variadic)
-- `mask_from_active_low_array<N>(bool_array)`
-- `mask_from_active_high_indices({1, 3})` (`initializer_list` overload when available on toolchain)
-
----
-
-## Bit Order
-
-Default mapping:
-
-- `keys[0] -> bit 0`
-- `keys[1] -> bit 1`
-- ...
-
-Reversed mapping (`ReverseOrder=true` or `*Rev` factories):
-
-- `keys[0] -> bit N-1`
-- `keys[N-1] -> bit 0`
-
-Bit order affects packed values, edge masks, helper index interpretation, and polarity masks.
-
----
-
-## Latch Modes
-
-- `ManualClear`: `changed()` stays true until `clearChanged()`
-- `ClearOnRead`: calling `value()` clears `changed()`
-
-Use `peekValue()` for side-effect-free reads.
-
-Important edge-mask detail:
-
-- `clearChanged()` clears only the `changed()` latch.
-- `changedMask()`, `risingMask()`, `fallingMask()`, `rose(i)`, and `fell(i)` are derived from `current` and `previous`, so they still describe the last committed transition after `clearChanged()`.
-- `clearEdges()` collapses `previous == current` so the edge masks read as zero. It does not clear the `changed()` latch; call `clearChanged()` as well if you want both the latch and masks cleared.
-
----
-
-## Scan Throttling
-
-Use to reduce expensive scans (I2C/SPI expanders):
+A default/missing reader now fails closed:
 
 ```cpp
-bank.setMinPollMs(10);
+bank.sync();
+
+bank.configured(); // false
+bank.valid();      // false
+bank.hasSample();  // false
+bank.lastError();  // SwitchBankReadError::MissingReader
+bank.peekValue();  // retained safe/default state
 ```
 
-Guidelines:
+The v1.1 behaviour where an absent reader appeared as LOW and therefore turned every active-low bit ON has been removed.
 
-- direct GPIO: often `0`
-- bus expanders: start around `5..20` ms
+### Acquisition failure
 
-This is not a debounce replacement; it only limits scan frequency.
+A validity-aware failure:
+
+- sets `valid = false`;
+- records `error_ms` and `attempt_ms`;
+- does not advance `sample_ms`;
+- does not increment `sequence`;
+- does not modify the stable state;
+- does not create an edge;
+- does not allow unobserved time to satisfy debounce.
+
+When valid sampling resumes, `valid` returns to true after that successful read. The application can decide whether a higher-level fault should remain latched.
 
 ---
 
-## Port Expander Performance: Cached Reads
+## Debouncing and recovery
 
-For expanders, avoid N bus transactions per scan when possible.
+Debouncing is per bit.
+
+When an input first changes, SwitchBank starts a stability timer for that input. The new logical state is accepted only after the input has remained at the same observed level for the configured debounce window.
+
+### Why failed-read time does not count
+
+Consider a 20 ms debounce:
+
+```text
+0 ms   candidate changes
+5 ms   external expander stops responding
+100 ms expander recovers
+```
+
+It would be unsafe to assume the contact was stable for 100 ms because the library did not observe it during the gap.
+
+SwitchBank v1.2 therefore rebases the candidate debounce window on the **first valid sample after an acquisition failure**.
+
+For `debounce_ms == 0`, recovery can still take effect immediately.
+
+### Time wrap
+
+All elapsed-time comparisons use unsigned subtraction, so normal `uint32_t` millisecond wraparound is handled correctly.
+
+---
+
+## Edges and durable change tracking
+
+SwitchBank retains the most recent stable transition through:
 
 ```cpp
-static uint8_t g_portA_cache = 0;
+bank.changedMask();
+bank.risingMask();
+bank.fallingMask();
+bank.rose(index);
+bank.fell(index);
+```
 
-static void refreshExpanderCache()
+### Explicit consumption
+
+New code should prefer explicit consumption:
+
+```cpp
+const SwitchBankEdges edges = bank.consumeEdges();
+```
+
+This returns the retained masks and then clears them.
+
+Or consume only the legacy changed latch:
+
+```cpp
+const bool changed = bank.consumeChanged();
+```
+
+### Why `change_sequence` matters
+
+Edge masks represent latest retained state, not an event history.
+
+If a consumer last saw:
+
+```text
+change_sequence = 17
+```
+
+and later sees:
+
+```text
+change_sequence = 20
+```
+
+then it knows three stable transitions occurred, even if it did not observe all intermediate edge masks.
+
+If every transition must be processed individually, transport those events through an application-level queue/counter. Do not treat SwitchBank as an event journal.
+
+### Legacy ClearOnRead mode
+
+`LatchMode::ClearOnRead` is retained for v1.x compatibility, but it makes `value()` have a hidden side effect.
+
+New code should keep the default:
+
+```cpp
+LatchMode::ManualClear
+```
+
+and use `peekValue()`, `consumeChanged()`, or `consumeEdges()` explicitly.
+
+---
+
+## Polarity and bit order
+
+### Active-low
+
+For a pull-up switch connected to GND:
+
+```text
+HIGH = OFF
+LOW  = ON
+```
+
+Set the corresponding active-low mask bit to `1`.
+
+### Active-high
+
+For an input where HIGH means ON, the active-low mask bit is `0`.
+
+### Mask helpers
+
+```cpp
+mask_all_active_low<N>();
+mask_all_active_high<N>();
+mask_from_active_high_indices<N>(...);
+mask_from_active_low_array(...);
+```
+
+### ReverseOrder
+
+Normal packing:
+
+```text
+keys[0] -> output bit 0
+keys[1] -> output bit 1
+...
+```
+
+With `ReverseOrder = true`:
+
+```text
+keys[0] -> output bit N-1
+...
+keys[N-1] -> output bit 0
+```
+
+Reader acquisition order does not change; only logical output packing changes.
+
+---
+
+## Coherent packed reads
+
+Sequential reads are fine for unrelated GPIO switches.
+
+They are less ideal for a selector made from several contacts. If the selector moves between two per-key reads, software may temporarily assemble a bit pattern that never existed as one physical state.
+
+For a hardware expander that can return all inputs in one register read, use the packed-reader path:
+
+```text
+ONE hardware snapshot
+        |
+        v
+packed electrical levels
+        |
+        v
+polarity + bit-order normalization
+        |
+        v
+per-bit debounce
+        |
+        v
+stable packed selector state
+```
+
+For MCP23017 specifically, a single 16-bit GPIO read can supply the complete contact set before SwitchBank decodes it.
+
+This does not make an electrically break-before-make selector magically atomic. It simply prevents **software acquisition skew** from adding another impossible intermediate state.
+
+The application must still validate legal combinations such as gear contact patterns.
+
+---
+
+## Runtime configuration
+
+### Poll throttling
+
+```cpp
+bank.setMinPollMs(5);
+```
+
+A throttled call does not count as an acquisition and does not increment `sequence`.
+
+### Debounce window
+
+```cpp
+bank.setDebounceMs(20);
+```
+
+For substantial runtime configuration changes, explicitly resynchronize after the hardware/configuration is settled.
+
+### Runtime polarity
+
+```cpp
+if (!bank.setActiveLowMask(new_mask))
 {
-    const uint16_t gpioAB = mcp.readGPIOAB();   // one I2C read
-    g_portA_cache = (uint8_t)(gpioAB & 0x00FF); // GPA0..GPA7
-}
-
-static bool readExpander(uint8_t pin)
-{
-    return ((g_portA_cache >> pin) & 1) != 0;   // electrical HIGH/LOW
-}
-
-void setup()
-{
-    // After Wire.begin(), mcp.begin_I2C(), and mcp.pinMode(...):
-    refreshExpanderCache();
-    bank.sync(now_ms());                         // clean baseline from the cache
-}
-
-void loop()
-{
-    refreshExpanderCache();
-    bank.update(now_ms());
+    // Hardware could not be re-read under the new interpretation.
 }
 ```
+
+A successful polarity change resynchronizes without edges and increments `generation`.
+
+If the read fails, SwitchBank restores the previous polarity mask and retains the previous stable state.
+
+### Immediate commissioning acceptance
+
+The old broadly named `commit()` API could bypass the library's main debounce guarantee.
+
+The explicit v1.2 name is:
+
+```cpp
+bank.forceCommitForCommissioning();
+```
+
+Use this only when immediate acceptance is deliberate—for example during commissioning or controlled reconfiguration.
+
+Normal runtime code should call `update()`.
 
 ---
 
-## Runtime Polarity Changes
+## API reference
+
+### Package version macros
+
+Use `SWITCHBANK_VERSION`, `SWITCHBANK_VERSION_MAJOR`, `SWITCHBANK_VERSION_MINOR`, and `SWITCHBANK_VERSION_PATCH`. The generic `LIBRARY_VERSION*` aliases from v1.2.0 are intentionally absent from this development baseline because they are not safe in multi-library applications.
+
+### Main types
 
 ```cpp
-bank.setActiveLowMask(0xFF);
+SwitchBank<N>
+SwitchBankArduino<N>
+SwitchBankHandler
+SwitchBankReadResult
+SwitchBankPackedReadResult
+SwitchBankStatus
+SwitchBankEdges
 ```
 
-Behavior note:
+### Normal lifecycle
 
-- when runtime polarity is enabled (`PolarityMask == -1`), mask is updated and the bank resyncs
-- when compile-time polarity is used, runtime mask changes are ignored (no-op)
+```cpp
+bank.sync();
+bank.update();
+bank.peekValue();
+```
+
+### Health/freshness
+
+```cpp
+bank.configured();
+bank.valid();
+bank.hasSample();
+bank.sampleMs();
+bank.lastError();
+bank.sequence();
+bank.changeSequence();
+bank.generation();
+bank.status();
+```
+
+### Edge information
+
+```cpp
+bank.changed();
+bank.changedMask();
+bank.risingMask();
+bank.fallingMask();
+bank.rose(index);
+bank.fell(index);
+bank.consumeChanged();
+bank.consumeEdges();
+```
+
+### Factories
+
+Legacy/simple readers:
+
+```cpp
+makeSwitchBankPins<N>(...)
+makeSwitchBankCtx<N>(...)
+makeSwitchBankPinsMasked<N>(...)
+makeSwitchBankCtxMasked<N>(...)
+```
+
+Validity-aware readers:
+
+```cpp
+makeSwitchBankResultCtx<N>(...)
+makeSwitchBankResultCtxMasked<N>(...)
+```
+
+Coherent packed readers:
+
+```cpp
+makeSwitchBankPacked<N>(...)
+makeSwitchBankPackedMasked<N>(...)
+```
+
+Compile-time/reversed helpers remain available through `SwitchBank_Factory.h`.
+
+### Builder
+
+`SwitchBankBuilder<N>` retains the existing reader paths and adds:
+
+```cpp
+.withResultReader(...)
+.withPackedReader(...)
+```
+
+The builder still performs no dynamic allocation.
 
 ---
 
-## Snapshot and Callback
+## Examples
 
-`snapshot()` returns:
+The existing four-example progression is intentionally retained.
 
-```cpp
-struct SwitchBankSnapshot {
-    uint32_t value;
-    uint32_t changed;
-    uint32_t rising;
-    uint32_t falling;
-    uint32_t t_ms;
-    uint32_t seq;
-};
-```
+### `01_SimpleDIP3Bit`
 
-Enable callback support by defining:
+The beginner GPIO path:
 
-```cpp
-#define SWITCHBANK_ENABLE_COMMIT_CALLBACK
-```
+- three ESP32-S3 GPIOs;
+- active-low pull-ups;
+- 20 ms debounce;
+- rising/falling edge messages.
 
-Then register:
+### `02_ModeNames3Bit`
 
-```cpp
-bank.setOnCommit([](const SwitchBankSnapshot& s) noexcept {
-    Serial.print("Commit value=");
-    Serial.println((unsigned long)s.value);
-});
-```
+Shows how the packed `0..7` value can be translated into application-specific mode names.
 
-Callbacks execute in caller context (`update` / `commit`), so keep them fast and non-blocking.
+### `03_PortExpander8Bit`
+
+Shows a straightforward MCP23017 per-pin reader. This is easy to understand, but each switch may require a separate expander access.
+
+### `04_PortExpanderCachedRead`
+
+Shows the preferred coherent selector pattern in v1.2: one MCP23017 register snapshot is passed through `makeSwitchBankPacked()`.
+
+The example driver does not expose a definitive bus-error result for `readGPIOAB()`, so it returns `success(...)`. A hardware adapter that can detect transfer failure should return `SwitchBankPackedReadResult::failure()` instead.
 
 ---
 
-## Testing and Validation
+## Testing
 
-This repository uses PlatformIO environments in `platformio.ini`.
+Testing now lives under `test/` rather than being mixed into a PlatformIO CI configuration.
 
-The ESP32-S3 environment is the primary hardware target. The other configured environments are useful compile checks for the header-only core and Arduino wrapper; passing those builds does not mean every example pinout or pull mode has been hardware-tested on that board.
-
-### Build current default environment
+Run the complete host-side suite with:
 
 ```bash
-pio run
+./test/run_host_checks.sh
 ```
 
-### Build a specific environment
+Current v1.2.0 host result: `26 tests / 1182 assertions`, repeated with Clang when available, plus strict warning-clean example syntax, ASan/UBSan, and release-contract checks.
+
+### Native deterministic suite
+
+Run:
 
 ```bash
-pio run -e nano_every
+./test/run_native_tests.sh
 ```
 
-### Build all configured environments
+The suite covers:
+
+- missing/null readers;
+- active-low and active-high polarity;
+- validity-aware failed reads;
+- post-failure debounce recovery;
+- stable-source freshness;
+- sample/change timestamps;
+- acquisition and transition sequences;
+- explicit sync generation;
+- packed coherent acquisition;
+- selector transition integrity;
+- debounce bounce patterns;
+- `uint32_t` timestamp wrap;
+- explicit edge consumption;
+- missed-transition detection;
+- out-of-range bit helpers;
+- reversed bit order;
+- runtime polarity rollback;
+- commissioning bypass semantics;
+- 32-bit bank masks;
+- PW_PVT constructor compatibility;
+- gear-selector legal packed states;
+- builder/factory paths.
+
+### Sanitizers
+
+Run:
 
 ```bash
-for env in esp32-s3-devkitc-1 esp8266_nodemcuv2 pico mkrzero nano_every uno teensy41 bluepill_f103c8; do
-  pio run -e "$env" || break
-done
+./test/run_sanitizers.sh
 ```
 
-### Compile each example across all environments
+The deterministic host suite is built with AddressSanitizer and UndefinedBehaviorSanitizer.
 
-```bash
-examples=(
-  examples/01_Simple_DIP_3-bit
-  examples/02_Mode_Names_3-bit
-  examples/03_Port_Expander_8-bit
-  examples/04_Port_Expander_Cached_Read
-)
+### Cross-platform compile matrix
 
-envs=(esp32-s3-devkitc-1 esp8266_nodemcuv2 pico mkrzero nano_every uno teensy41 bluepill_f103c8)
+The v1.2.0 release was locally compiled with PlatformIO for:
 
-for ex in "${examples[@]}"; do
-  for env in "${envs[@]}"; do
-    echo "=== $env :: $ex ==="
-    pio run -e "$env" --project-option "src_dir=$ex" || exit 1
-  done
-done
+- `esp32-s3-devkitc-1` using Espressif 32 `6.12.0`;
+- `esp32dev` using Espressif 32 `6.12.0`;
+- `esp8266_nodemcuv2` using Espressif 8266 `4.2.1`;
+- `pico` using Raspberry Pi RP2040 `1.20.0+sha.9c167c6`;
+- `mkrzero` using Atmel SAM `8.3.0`;
+- `nano_every` using Atmel megaAVR `1.9.0`;
+- `uno` using Atmel AVR `5.1.0`;
+- `teensy41` using Teensy `5.0.0`;
+- `bluepill_f103c8` using ST STM32 `19.4.0`.
+
+All four public examples were also compiled locally for `esp32-s3-devkitc-1`.
+
+The RP2040 toolchain emitted warnings from its bundled Pico SDK timer headers. No SwitchBank source warnings were emitted in the local PlatformIO matrix.
+
+The local release checklist distinguishes between tests actually executed locally and CI/hardware gates that still need the target environment.
+
+---
+
+## Migration from v1.1
+
+Most v1.1 sketches continue to compile unchanged.
+
+### 1. Missing reader now fails closed
+
+**v1.1:** null reader -> electrical LOW -> all active-low bits logically ON.
+
+**v1.2:** null reader -> `valid=false`, `MissingReader`, stable state retained.
+
+This is an intentional safety correction.
+
+### 2. `sync()` now reports success
+
+You may continue to write:
+
+```cpp
+bank.sync();
+```
+
+or check it:
+
+```cpp
+if (!bank.sync())
+{
+    // Input source is not ready.
+}
+```
+
+A successful `sync()` no longer resets the sequence counters.
+
+### 3. Sequence meaning is clearer
+
+In snapshots:
+
+```cpp
+snapshot.seq
+```
+
+now means **successful acquisition sequence**.
+
+Use:
+
+```cpp
+snapshot.change_seq
+bank.changeSequence()
+bank.changeCount()
+```
+
+for stable state transition count.
+
+`changeCount()` is now monotonic across `sync()`.
+
+### 4. Freshness uses `sampleMs()`
+
+`lastCommitMs()` remains as a compatibility name for the latest stable state transition.
+
+Do not use it to decide whether a stable input source is fresh.
+
+Use:
+
+```cpp
+bank.sampleMs();
+bank.sequence();
+bank.valid();
+```
+
+### 5. Prefer explicit edge consumption
+
+Instead of relying on `LatchMode::ClearOnRead`, prefer:
+
+```cpp
+bank.peekValue();
+bank.consumeChanged();
+bank.consumeEdges();
+```
+
+`ClearOnRead` remains available in v1.x for compatibility.
+
+### 6. `commit()` has a clearer replacement
+
+Use:
+
+```cpp
+bank.forceCommitForCommissioning();
+```
+
+The old `commit()` remains as a deprecated alias unless:
+
+```cpp
+#define SWITCHBANK_NO_LEGACY_COMMIT
+```
+
+is defined before including the library.
+
+### 7. External buses should move to validity-aware readers
+
+Existing bool callbacks remain valid for GPIO and simple APIs.
+
+Where a bus transaction can fail, return `SwitchBankReadResult` or `SwitchBankPackedReadResult` instead of converting failure into LOW/HIGH.
+
+---
+
+## Project integration guidance
+
+For a larger state/snapshot architecture, a useful application frame is conceptually:
+
+```text
+SwitchBank
+   |
+   +-- stable value
+   +-- valid
+   +-- sample_ms
+   +-- sequence
+   +-- change_sequence
+   +-- generation
+           |
+           v
+application adapter / state bus
+           |
+           v
+mode, authority, gear or safety policy
+```
+
+A consumer should generally require:
+
+1. `valid == true`;
+2. `sample_ms` within its own freshness window;
+3. a legal application-specific packed combination;
+4. any required startup/safety state outside SwitchBank.
+
+### PW_PVT specifically
+
+PW_PVT currently uses one cached MCP23017 hardware snapshot for both the DIP bank and gear bank before calling SwitchBank, which already avoids independent I2C transactions for each contact.
+
+The existing constructor shape remains source-compatible in v1.2.
+
+A later PW_PVT integration pass should additionally propagate SwitchBank's own:
+
+```cpp
+valid()
+sampleMs()
+sequence()
+changeSequence()
+```
+
+into the application's provider-health contract, rather than relying only on the surrounding MCP health flag.
+
+For the multi-contact shifter, a packed-reader adapter is also a natural future simplification because the cached MCP sample is already coherent.
+
+SwitchBank itself must remain unaware of PW_PVT, SnapshotBus, SafetyCore, MCP23017, or any other LMB library.
+
+---
+
+## Limitations
+
+- A legacy bool reader cannot report acquisition failure. Use an explicit validity-aware reader when failure matters.
+- A packed reader makes software acquisition coherent; it does not remove electrical contact bounce or mechanically invalid transition states.
+- Edge masks represent the latest retained transition, not an event history.
+- `uint32_t` sequence counters eventually wrap naturally.
+- SwitchBank is not thread-safe by itself. Keep one owner/task for mutation, or place synchronization at the application boundary.
+- The library cannot determine whether a packed selector value is semantically safe or legal for your machine.
+- Hardware bus recovery, retries, and fault latching belong in the hardware/application layer.
+
+---
+
+## Repository structure
+
+```text
+SwitchBank/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── examples/
+│   ├── 01_SimpleDIP3Bit/
+│   ├── 02_ModeNames3Bit/
+│   ├── 03_PortExpander8Bit/
+│   └── 04_PortExpanderCachedRead/
+├── src/
+│   ├── SwitchBank.h
+│   ├── SwitchBank_Arduino.h
+│   ├── SwitchBank_Compatibility.h
+│   ├── SwitchBank_Factory.h
+│   └── SwitchBank_Handler.h
+├── test/
+│   ├── native/
+│   ├── host_stubs/
+│   ├── portable_compile/
+│   ├── README.md
+│   ├── check_examples_host.sh
+│   ├── check_release_contracts.sh
+│   ├── run_host_checks.sh
+│   ├── run_native_tests.sh
+│   └── run_sanitizers.sh
+├── .gitignore
+├── CHANGELOG.md
+├── LICENSE
+├── README.md
+├── RELEASE_CHECKLIST.md
+├── keywords.txt
+├── library.json
+├── library.properties
+└── platformio.ini
 ```
 
 ---
 
-## Troubleshooting
+## Version history
 
-- No changes detected:
-  - verify reader returns electrical level (`HIGH=true`, `LOW=false`)
-  - verify polarity mask / `Polarity` selection
-  - ensure `sync()` was called after IO init
-- Unexpected startup edges:
-  - call `sync()` once after initialization, before normal polling
-- Expander polling feels slow:
-  - use cached-read pattern and tune `setMinPollMs(...)`
-
----
-
-## Contributing
-
-When reporting an issue, include:
-
-- board name
-- core/platform version
-- PlatformIO or Arduino IDE version
-- minimal reproducible sketch
+Current version: **1.2.0**. See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
 ---
 
 ## License
 
-MIT Copyright (c) Little Man Builds
+SwitchBank is released under the **MIT License**. See [LICENSE](LICENSE).
+
+Copyright © 2026 Little Man Builds (Darren Osborne).

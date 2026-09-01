@@ -3,39 +3,47 @@
 #######################################
 SwitchBankHandler	KEYWORD1
 SwitchBank	KEYWORD1
-SwitchBankSnapshot	KEYWORD1
-LatchMode	KEYWORD1
 SwitchBankArduino	KEYWORD1
+SwitchBankReadError	KEYWORD1
+SwitchBankReadResult	KEYWORD1
+SwitchBankPackedReadResult	KEYWORD1
+SwitchBankStatus	KEYWORD1
+SwitchBankEdges	KEYWORD1
+SwitchBankSnapshot	KEYWORD1
+SwitchBankBuilder	KEYWORD1
+LatchMode	KEYWORD1
 Polarity	KEYWORD1
 PinModeCfg	KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
 #######################################
-# Factories (easy header)
 makeSwitchBankPins	KEYWORD2
 makeSwitchBankCtx	KEYWORD2
 makeSwitchBankPinsMasked	KEYWORD2
 makeSwitchBankCtxMasked	KEYWORD2
+makeSwitchBankResultCtx	KEYWORD2
+makeSwitchBankResultCtxMasked	KEYWORD2
+makeSwitchBankPacked	KEYWORD2
+makeSwitchBankPackedMasked	KEYWORD2
 makeSwitchBankPinsCT	KEYWORD2
 makeSwitchBankCtxCT	KEYWORD2
 makeSwitchBankPinsRev	KEYWORD2
 makeSwitchBankCtxRev	KEYWORD2
-SwitchBankBuilder	KEYWORD2
-
-# Arduino factory / helpers
 makeSwitchBankArduino	KEYWORD2
-
-# Core APIs
 sync	KEYWORD2
 update	KEYWORD2
+forceCommitForCommissioning	KEYWORD2
 commit	KEYWORD2
 value	KEYWORD2
 peekValue	KEYWORD2
 value8	KEYWORD2
 prevValue	KEYWORD2
 changed	KEYWORD2
+consumeChanged	KEYWORD2
+consumeEdges	KEYWORD2
 clearChanged	KEYWORD2
+clearEdges	KEYWORD2
 changedMask	KEYWORD2
 risingMask	KEYWORD2
 fallingMask	KEYWORD2
@@ -47,19 +55,27 @@ size	KEYWORD2
 kSize	KEYWORD2
 snapshot	KEYWORD2
 core	KEYWORD2
+configured	KEYWORD2
+valid	KEYWORD2
+hasSample	KEYWORD2
+lastError	KEYWORD2
+sampleMs	KEYWORD2
+changeMs	KEYWORD2
+lastAttemptMs	KEYWORD2
+lastErrorMs	KEYWORD2
+sequence	KEYWORD2
+changeSequence	KEYWORD2
+generation	KEYWORD2
+status	KEYWORD2
 lastCommitMs	KEYWORD2
 changeCount	KEYWORD2
 setOnCommit	KEYWORD2
-
-# Runtime configuration
 setTimeSource	KEYWORD2
 setMinPollMs	KEYWORD2
 setLatchMode	KEYWORD2
 setDebounceMs	KEYWORD2
 setActiveLowMask	KEYWORD2
 activeLowMask	KEYWORD2
-
-# Builder APIs
 withDebounce	KEYWORD2
 withAllActiveLow	KEYWORD2
 withAllActiveHigh	KEYWORD2
@@ -67,11 +83,11 @@ withActiveLowMask	KEYWORD2
 withActiveHighIndices	KEYWORD2
 withTime	KEYWORD2
 withReader	KEYWORD2
+withResultReader	KEYWORD2
+withPackedReader	KEYWORD2
 hasReader	KEYWORD2
 build	KEYWORD2
 onCommit	KEYWORD2
-
-# Mask helpers
 mask_all_active_low	KEYWORD2
 mask_all_active_high	KEYWORD2
 mask_from_active_high_indices	KEYWORD2
@@ -81,4 +97,8 @@ mask_from_active_low_array	KEYWORD2
 # Constants / Macros (LITERAL1)
 #######################################
 SWITCHBANK_VERSION	LITERAL1
+SWITCHBANK_VERSION_MAJOR	LITERAL1
+SWITCHBANK_VERSION_MINOR	LITERAL1
+SWITCHBANK_VERSION_PATCH	LITERAL1
 SWITCHBANK_ENABLE_COMMIT_CALLBACK	LITERAL1
+SWITCHBANK_NO_LEGACY_COMMIT	LITERAL1

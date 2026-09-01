@@ -1,11 +1,17 @@
 /**
- * @file 02_Mode_Names_3bit.ino
+ * MIT License
  *
- * @brief Interpret a 3-bit DIP switch as named modes.
+ * @brief Simple 3-bit DIP switch example using ESP32-S3 GPIO pins.
+ *
+ * @file 01_SimpleDIP3Bit.ino
+ * @author Little Man Builds (Darren Osborne)
+ * @date 2025-09-30
+ * @copyright Copyright © 2026 Little Man Builds
  */
 
-#include <Arduino.h>
 #include <SwitchBank_Arduino.h>
+
+#include <Arduino.h>
 
 // ESP32-S3 example pins. Change these to suitable GPIOs for your board.
 // We have 3 DIP switches on GPIO 35, 36, 37.
@@ -23,32 +29,6 @@ auto dip = makeSwitchBankArduino<3>(
     Polarity::ActiveLow,
     PinModeCfg::Pullup);
 
-// Convert a packed DIP value into a human-readable mode name.
-const char *modeName(int mode)
-{
-    switch (mode)
-    {
-    case 0:
-        return "Mode 0 (Default)";
-    case 1:
-        return "Mode 1";
-    case 2:
-        return "Mode 2";
-    case 3:
-        return "Mode 3";
-    case 4:
-        return "Mode 4";
-    case 5:
-        return "Mode 5";
-    case 6:
-        return "Mode 6";
-    case 7:
-        return "Mode 7 (Max)";
-    default:
-        return "Invalid";
-    }
-}
-
 void setup()
 {
     Serial.begin(115200);
@@ -63,12 +43,23 @@ void loop()
     // update() polls the inputs and commits a new value when it stabilizes.
     if (dip.update())
     {
-        int mode = dip.value(); ///< 0..7 for a 3-bit bank.
+        // Check each switch for 'off' → 'on' or 'on' → 'off' transitions.
+        for (uint8_t i = 0; i < dip.size(); ++i)
+        {
+            if (dip.rose(i)) // Off → on.
+            {
+                Serial.print("Switch ");
+                Serial.print(i + 1);
+                Serial.println(" turned ON");
+            }
 
-        Serial.print("DIP value: ");
-        Serial.print(mode, BIN); ///< Print in binary (base 2).
-        Serial.print(" -> ");
-        Serial.println(modeName(mode));
+            if (dip.fell(i)) // On → off.
+            {
+                Serial.print("Switch ");
+                Serial.print(i + 1);
+                Serial.println(" turned OFF");
+            }
+        }
     }
 
     // Small delay to keep serial output readable.

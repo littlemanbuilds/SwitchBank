@@ -1,17 +1,18 @@
 /**
  * MIT License
  *
- * @brief Small compatibility helpers for SwitchBank to support Arduino cores with limited libstdc++.
+ * @brief Small compatibility helpers for SwitchBank across Arduino toolchains.
  *
  * @file SwitchBank_Compatibility.h
  * @author Little Man Builds (Darren Osborne)
  * @date 2026-01-30
  * @copyright Copyright © 2026 Little Man Builds
  */
+
 #pragma once
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #if defined(__has_include)
 #if __has_include(<type_traits>)
@@ -24,13 +25,27 @@
 #define SWITCHBANK_HAS_TYPE_TRAITS 0
 #endif
 
+#if __cplusplus >= 201703L
+#define SWITCHBANK_NODISCARD [[nodiscard]]
+#else
+#define SWITCHBANK_NODISCARD
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+#define SWITCHBANK_DEPRECATED(message) __attribute__((deprecated(message)))
+#elif defined(_MSC_VER)
+#define SWITCHBANK_DEPRECATED(message) __declspec(deprecated(message))
+#else
+#define SWITCHBANK_DEPRECATED(message)
+#endif
+
 namespace switchbank
 {
     namespace compat
     {
-        /**
-         * @brief Minimal enable_if fallback used by SwitchBank API constraints.
-         */
+/**
+ * @brief Minimal enable_if fallback used by SwitchBank API constraints.
+ */
 #if SWITCHBANK_HAS_TYPE_TRAITS
         template <bool B, typename T = void>
         using enable_if = std::enable_if<B, T>;
@@ -39,6 +54,7 @@ namespace switchbank
         struct enable_if
         {
         };
+
         template <typename T>
         struct enable_if<true, T>
         {
@@ -48,5 +64,5 @@ namespace switchbank
 
         template <bool B, typename T = void>
         using enable_if_t = typename enable_if<B, T>::type;
-    } ///< namespace compat
-} ///< namespace switchbank
+    } // namespace compat
+} // namespace switchbank
