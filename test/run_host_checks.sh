@@ -1,14 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
+#!/bin/sh
+set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-
-bash "$ROOT/test/run_native_tests.sh"
-
-if command -v clang++ >/dev/null 2>&1; then
-  CXX=clang++ bash "$ROOT/test/run_native_tests.sh"
-fi
-
-bash "$ROOT/test/run_sanitizers.sh"
-bash "$ROOT/test/check_examples_host.sh"
-bash "$ROOT/test/check_release_contracts.sh"
+# Explicitly select Bash even when a caller invokes this entry point with sh.
+exec bash "$ROOT/test/run_all_host_checks.sh" "$@"

@@ -2,6 +2,23 @@
 
 All notable changes to SwitchBank are documented here.
 
+## [Unreleased]
+
+## [1.2.1] - 2026-09-08
+
+### Fixed
+
+- Widen mask operands before shifts and complements on AVR/megaAVR, preserving inputs 16..31 during acquisition, polarity changes, reverse packing and debounce updates.
+- Retain safe full-width handling for 32-input banks and all existing compatibility aliases.
+
+### Validation and documentation
+
+- Add boundary regressions for 15/16/17/31/32-input banks and target-width constant-expression checks for mixed polarity and upper-bit preservation.
+- Require genuine GNU GCC, Clang and sanitizer execution in the host gate; strengthen the portable package fixture.
+- Complete callable API contracts and clarify consumer adapter, example type-width and physical-validation limitations.
+
+This date identifies release preparation; it does not record publication or physical validation.
+
 ## [1.2.0] - 2026-09-01
 
 ### Added
@@ -27,7 +44,7 @@ All notable changes to SwitchBank are documented here.
 - Runtime polarity changes are resynchronized and roll back the mask if the required read fails.
 - The first `update()` is no longer blocked by `setMinPollMs()` before any acquisition timestamp exists.
 - Example 04 now demonstrates the coherent packed-reader path.
-- Public documentation, metadata, `.gitignore`, keywords, Doxygen headers, testing, and release structure are standardized with the current LMB library pattern.
+- Standardized public documentation, metadata, `.gitignore`, keywords, Doxygen headers, testing, and release structure.
 - Local PlatformIO release validation now covers every claimed board environment plus all public examples on ESP32-S3.
 
 ### Fixed
@@ -41,4 +58,4 @@ All notable changes to SwitchBank are documented here.
 
 ## [1.1.0]
 
-- Previous public release baseline from the supplied project archive.
+- Previous public release; detailed notes were not recorded in this changelog.

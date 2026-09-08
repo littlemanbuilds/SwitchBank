@@ -4,7 +4,7 @@
 
 It is useful for DIP banks, slide switches, rotary/gear contact groups, mode selectors, button-style maintained contacts, and GPIO-expander inputs where the application wants a clean logical state instead of repeating polarity, debounce, and edge-detection code.
 
-Version **1.2.0** keeps the simple v1.x usage model, while adding the missing reliability contract needed for larger embedded systems: failed acquisitions no longer become switch states, coherent packed hardware reads are supported, freshness is separate from state-change time, and resynchronization no longer resets the sequence history.
+Version **1.2.1** fixes mask arithmetic on 16-bit toolchains. It retains the v1.x usage model and the reliability features introduced in 1.2.0: failed acquisitions do not become switch states, coherent packed hardware reads are supported, freshness is separate from state-change time, and resynchronization preserves sequence history.
 
 ESP32-S3 remains the primary project target, but the core is deliberately portable and allocation-free.
 
@@ -66,7 +66,7 @@ It deliberately does **not** decide whether `0b0110` means `D1`, `SPORT`, `REMOT
 
 ### What v1.2 specifically improves
 
-Version 1.2 directly addresses the architecture audit findings:
+Version 1.2 provides these acquisition and state contracts:
 
 - a missing reader now reports `MissingReader` instead of making every active-low input appear ON;
 - validity-aware readers can reject a failed hardware acquisition;
@@ -149,7 +149,7 @@ The library is header-only, so there is no runtime library initialization step b
 
 The library core is standard C++11-compatible code with small Arduino adapters.
 
-The v1.2.0 release was locally compile-validated with PlatformIO for:
+Historical v1.2.0 compile evidence covered the following PlatformIO targets (not rerun for 1.2.1):
 
 - ESP32-S3 DevKitC-1;
 - ESP32;
@@ -773,6 +773,8 @@ The example driver does not expose a definitive bus-error result for `readGPIOAB
 
 ## Testing
 
+The 1.2.1 validation scope is native C++11 on GNU GCC and Clang, ASan/UBSan, strict host example syntax, release contracts, and package builds for ESP32-S3, AVR Uno and megaAVR Nano Every. All four public examples are built for ESP32-S3. Additional AVR C++14 constant-expression checks exercise loop-based mask helpers with real 16-bit `unsigned int`; the public minimum remains C++11. Compilation does not validate electrical behavior, disconnect detection or physical selector transitions.
+
 Testing now lives under `test/` rather than being mixed into a PlatformIO CI configuration.
 
 Run the complete host-side suite with:
@@ -781,7 +783,7 @@ Run the complete host-side suite with:
 ./test/run_host_checks.sh
 ```
 
-Current v1.2.0 host result: `26 tests / 1182 assertions`, repeated with Clang when available, plus strict warning-clean example syntax, ASan/UBSan, and release-contract checks.
+The host gate requires genuine GNU G++, Clang, ASan/UBSan, strict warning-clean example syntax, and release-contract checks. Missing compilers or sanitizer support fail the gate; set `GCC_CXX` or `CLANG_CXX` (`GNU_CXX` remains a compatibility alias) if a compiler is outside PATH.
 
 ### Native deterministic suite
 
@@ -812,7 +814,7 @@ The suite covers:
 - runtime polarity rollback;
 - commissioning bypass semantics;
 - 32-bit bank masks;
-- PW_PVT constructor compatibility;
+- consumer constructor compatibility;
 - gear-selector legal packed states;
 - builder/factory paths.
 
@@ -828,7 +830,7 @@ The deterministic host suite is built with AddressSanitizer and UndefinedBehavio
 
 ### Cross-platform compile matrix
 
-The v1.2.0 release was locally compiled with PlatformIO for:
+Historical v1.2.0 compilation covered the following targets (not current 1.2.1 evidence):
 
 - `esp32-s3-devkitc-1` using Espressif 32 `6.12.0`;
 - `esp32dev` using Espressif 32 `6.12.0`;
@@ -979,26 +981,13 @@ A consumer should generally require:
 3. a legal application-specific packed combination;
 4. any required startup/safety state outside SwitchBank.
 
-### PW_PVT specifically
+### Cached expander adapters
 
-PW_PVT currently uses one cached MCP23017 hardware snapshot for both the DIP bank and gear bank before calling SwitchBank, which already avoids independent I2C transactions for each contact.
+An application can share one cached MCP23017 snapshot between a DIP bank and a selector bank, avoiding independent I2C transactions for each contact. The existing context-reader constructor remains source-compatible. A packed-reader adapter expresses the coherent snapshot directly.
 
-The existing constructor shape remains source-compatible in v1.2.
+Propagate `valid()`, `sampleMs()`, `sequence()` and `changeSequence()` into the application's provider-health contract. An adapter must report failure when it knows a transfer failed; the surrounding device-health flag alone does not describe the freshness of a bank sample. Drivers without a definitive transfer-status result cannot promise reliable disconnect detection.
 
-A later PW_PVT integration pass should additionally propagate SwitchBank's own:
-
-```cpp
-valid()
-sampleMs()
-sequence()
-changeSequence()
-```
-
-into the application's provider-health contract, rather than relying only on the surrounding MCP health flag.
-
-For the multi-contact shifter, a packed-reader adapter is also a natural future simplification because the cached MCP sample is already coherent.
-
-SwitchBank itself must remain unaware of PW_PVT, SnapshotBus, SafetyCore, MCP23017, or any other LMB library.
+Keep selector policy, transport and device-specific recovery in the application or hardware adapter.
 
 ---
 
@@ -1057,7 +1046,13 @@ SwitchBank/
 
 ## Version history
 
-Current version: **1.2.0**. See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
+Current version:
+
+```text
+1.2.1
+```
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed release history.
 
 ---
 

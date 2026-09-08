@@ -36,7 +36,7 @@ uint32_t now_ms()
 static SwitchBankPackedReadResult readExpanderPacked(void * /*ctx*/)
 {
     const uint16_t gpioAB = mcp.readGPIOAB();
-    const uint32_t portA = static_cast<uint32_t>(gpioAB & 0x00FFu);
+    const uint32_t portA = static_cast<uint32_t>(gpioAB & 0x00FFu); // Keep GPA0..GPA7; ignore port B.
 
     // Adafruit_MCP23X17::readGPIOAB() does not expose a definitive transfer-status
     // result. A lower-level adapter that can detect an I2C failure should return
@@ -69,7 +69,7 @@ void setup()
         }
     }
 
-    for (uint8_t i = 0; i < 8; ++i)
+    for (int i = 0; i < 8; ++i)
     {
         mcp.pinMode(EXP_PINS[i], INPUT_PULLUP);
     }

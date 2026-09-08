@@ -1,6 +1,6 @@
 # SwitchBank release checklist
 
-Use this checklist before publishing a SwitchBank release.
+SwitchBank 1.2.1 preparation, 2026-09-08. Use this checklist before publication.
 
 ## Source and API
 
@@ -16,8 +16,8 @@ Use this checklist before publishing a SwitchBank release.
 
 ## Documentation and examples
 
-- [x] README includes the standard LMB introduction / contents / installation / beginner path / technical reference / testing / migration flow.
-- [x] All source headers use the LMB Doxygen file-header style.
+- [x] README includes installation, a beginner path, API reference, testing and migration guidance.
+- [x] Source headers document callable contracts and preserve creation dates.
 - [x] Existing four-example progression is retained.
 - [x] Example GPIO choices remain appropriate for the ESP32-S3 target.
 - [x] Example 04 demonstrates one coherent expander snapshot.
@@ -25,19 +25,23 @@ Use this checklist before publishing a SwitchBank release.
 
 ## Automated validation performed locally
 
-- [x] Native C++11 deterministic suite with GCC-compatible compiler.
-- [x] Native C++11 deterministic suite with Clang when available.
+- [x] Native C++11 deterministic suite with genuine GNU G++.
+- [x] Native C++11 deterministic suite with Clang.
 - [x] `-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Werror`.
 - [x] AddressSanitizer + UndefinedBehaviorSanitizer.
 - [x] Strict host syntax compile of public examples.
-- [x] PlatformIO portable compile for every claimed board environment.
+- [x] PlatformIO package builds for ESP32-S3, AVR Uno and megaAVR Nano Every.
 - [x] PlatformIO compile of all public examples for ESP32-S3.
 - [x] Release-contract/package-hygiene checks.
-- [x] Final release ZIP unpacked and retested from a clean directory.
+- [ ] Final release ZIP unpacked and retested from a clean directory.
+- [x] Target builds use a sanitized library package.
+- [x] AVR C++14 mask assertions use real 16-bit unsigned int; C++11 package builds retained.
 
 ## CI / hardware gates
 
 - [ ] GitHub Actions portable PlatformIO matrix completed remotely.
+- [ ] Broader platform matrix rerun for 1.2.1 (prior 1.2.0 evidence retained).
+- [ ] Physical selector transitions and legal-state behavior.
 - [ ] Physical ESP32-S3 GPIO debounce/edge smoke test.
 - [ ] Physical MCP23017 coherent packed-read test.
 - [ ] Physical MCP23017 disconnect/recovery validation with a driver capable of reporting acquisition failure.

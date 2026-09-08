@@ -1,6 +1,6 @@
 {
   "name": "SwitchBank",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Header-only 1..32-bit switch-bank library with per-bit debounce, polarity normalization, explicit acquisition validity, coherent packed reads, freshness/change metadata, durable sequences, and Arduino GPIO helpers.",
   "keywords": "switch,switchbank,dip,debounce,input,gpio,mcp23017,expander,selector,validity,packed,edge,snapshot,arduino",
   "license": "MIT",

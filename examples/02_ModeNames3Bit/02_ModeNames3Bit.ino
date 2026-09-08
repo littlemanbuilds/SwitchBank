@@ -69,7 +69,7 @@ void loop()
     // update() polls the inputs and commits a new value when it stabilizes.
     if (dip.update())
     {
-        const uint32_t mode = dip.peekValue(); // 0..7 for a 3-bit bank.
+        const uint32_t mode = dip.peekValue();
 
         Serial.print("DIP value: ");
         Serial.print(mode, BIN); ///< Print in binary (base 2).

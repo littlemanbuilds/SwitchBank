@@ -61,8 +61,103 @@ static SwitchBankPackedReadResult read_packed(void *ctx)
                    : SwitchBankPackedReadResult::success(c->levels);
 }
 
+static bool read_pin_boundary(std::uint8_t key)
+{
+    return key == 15u || key == 16u || key == 31u;
+}
+
+template <std::size_t N>
+static void check_width_boundary(std::uint32_t full)
+{
+    std::uint8_t keys[N]{};
+    bool low[N]{};
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        keys[i] = static_cast<std::uint8_t>(i);
+        low[i] = true;
+    }
+    CHECK(mask_all_active_low<N>() == full);
+    CHECK(mask_all_active_high<N>() == 0u);
+    CHECK(mask_from_active_low_array(low) == full);
+    low[0] = false;
+    CHECK(mask_from_active_low_array(low) == (full ^ 1u));
+    const std::uint8_t first[] = {0u, 0u, 32u}; // Duplicate and out-of-range indices are ignored.
+    CHECK(mask_from_active_high_indices<N>(first) == (full ^ 1u));
+    CHECK(mask_from_active_high_indices<N>() == full);
+    CHECK(mask_from_active_high_indices<N>(uint8_t{0}, uint8_t{0}, uint8_t{32}) == (full ^ 1u));
+#if SWITCHBANK_HAS_INITIALIZER_LIST
+    CHECK(mask_from_active_high_indices<N>({0u, 0u, 32u}) == (full ^ 1u));
+#endif
+    PerKeyCtx c;
+    auto bank = makeSwitchBankResultCtx<N>(keys, 0u, read_result, &c);
+    CHECK(bank.sync(1u));
+    CHECK(bank.peekValue() == full); // All electrical LOW, all active-low.
+    c.levels = 1u;
+    CHECK(bank.update(2u));
+    CHECK(bank.peekValue() == (full ^ 1u)); // Low-bit clear must retain every upper bit.
+    CHECK(bank.fallingMask() == 1u);
+    c.levels = full;
+    CHECK(bank.update(3u));
+    CHECK(bank.peekValue() == 0u);
+    CHECK(bank.setActiveLowMask(0u, 4u));
+    CHECK(bank.peekValue() == full); // All electrical HIGH, all active-high.
+    c.levels = 0x80018000UL & full;
+    CHECK(bank.update(5u));
+    CHECK(bank.peekValue() == c.levels);
+    const std::uint8_t upper[] = {15u, 16u, 31u};
+    const std::uint32_t mixed = full ^ (0x80018000UL & full);
+    CHECK(mask_from_active_high_indices<N>(upper) == mixed);
+    CHECK(mask_from_active_high_indices<N>(uint8_t{15}, uint8_t{16}, uint8_t{31}) == mixed);
+#if SWITCHBANK_HAS_INITIALIZER_LIST
+    CHECK(mask_from_active_high_indices<N>({15u, 16u, 31u}) == mixed);
+#endif
+    c.fail = true;
+    const std::uint32_t seq = bank.sequence();
+    const std::uint32_t gen = bank.generation();
+    CHECK(!bank.setActiveLowMask(mixed, 6u));
+    CHECK(bank.activeLowMask() == 0u);
+    CHECK(bank.peekValue() == c.levels);
+    CHECK(bank.sequence() == seq && bank.generation() == gen);
+    c.fail = false;
+    CHECK(bank.setActiveLowMask(mixed, 7u));
+    CHECK(bank.peekValue() == full);
+    CHECK(bank.changedMask() == 0u);
+    CHECK(bank.generation() == gen + 1u);
+
+    auto legacy = makeSwitchBankCtxMasked<N>(keys, 0u, read_bool, &c, 0u);
+    CHECK(legacy.sync(8u));
+    CHECK(legacy.peekValue() == c.levels);
+    auto pins = makeSwitchBankPinsMasked<N>(keys, 0u, read_pin_boundary, 0u);
+    CHECK(pins.sync(8u));
+    CHECK(pins.peekValue() == c.levels);
+    PackedCtx packed;
+    packed.levels = 1u;
+    auto reverse = makeSwitchBankCtxCT<N, 0, true>(keys, 0u, read_bool, &c);
+    c.levels = 1u;
+    CHECK(reverse.sync(9u));
+    const std::uint32_t top = (full >> 1u) + 1u;
+    CHECK(reverse.peekValue() == top);
+    SwitchBank<N, 0, true> coherent(keys, 0u, 0u, read_packed, &packed);
+    CHECK(coherent.sync(9u));
+    CHECK(coherent.peekValue() == top);
+    packed.levels = top;
+    CHECK(coherent.update(10u));
+    CHECK(coherent.peekValue() == 1u);
+    SwitchBankBuilder<N> builder(keys);
+    auto built = builder.withActiveHighIndices(first).withPackedReader(read_packed, &packed).build();
+    CHECK(built.sync(11u));
+    CHECK(built.peekValue() == (top ^ (full ^ 1u)));
+}
+
 int main()
 {
+    TEST("15/16/17/31/32-input mask and acquisition boundaries");
+    check_width_boundary<15>(0x7fffUL);
+    check_width_boundary<16>(0xffffUL);
+    check_width_boundary<17>(0x1ffffUL);
+    check_width_boundary<31>(0x7fffffffUL);
+    check_width_boundary<32>(0xffffffffUL);
+
     const std::uint8_t keys3[3] = {0u, 1u, 2u};
 
     TEST("missing reader fails closed instead of synthesizing active-low ON");
@@ -456,7 +551,7 @@ int main()
         CHECK(packed.reads == 1u);
     }
 
-    TEST("PW_PVT DIP and gear constructor shapes remain source-compatible");
+    TEST("Consumer DIP and selector constructor shapes remain source-compatible");
     {
         PerKeyCtx c;
         const std::uint8_t dip_keys[3] = {0u, 1u, 2u};
@@ -471,7 +566,7 @@ int main()
 
     TEST("gear-selector allowed combinations are preserved as complete packed states");
     {
-        // Consumer-level legal masks for R/FWD/D1/D3 contacts in PW_PVT.
+        // Consumer-level legal masks for R/FWD/D1/D3 contacts in a selector adapter.
         const std::uint32_t legal[] = {0u, 1u, 2u, 6u, 10u};
         PackedCtx c;
         const std::uint8_t keys4[4] = {0u, 1u, 2u, 3u};

@@ -32,11 +32,9 @@ for token in \
   'generation()' \
   'consumeEdges()' \
   'forceCommitForCommissioning()'; do
-  grep -Fq "$token" "$ROOT/README.md" || fail "README missing audit remediation: $token"
+  grep -Fq "$token" "$ROOT/README.md" || fail "README missing API contract: $token"
 done
 
-grep -Fq 'Current version: **1.2.0**. See [CHANGELOG.md](CHANGELOG.md)' "$ROOT/README.md" ||
-  fail "README version-history tail is inconsistent"
 grep -Fq 'SwitchBank is released under the **MIT License**. See [LICENSE](LICENSE).' "$ROOT/README.md" ||
   fail "README license tail is inconsistent"
 grep -Fq 'Copyright © 2026 Little Man Builds (Darren Osborne).' "$ROOT/README.md" ||
@@ -66,9 +64,26 @@ while IFS= read -r -d '' path; do
     tracked_debris=true
     break
   fi
-done < <(git -C "$ROOT" ls-files -z)
+done < <(if [[ -d "$ROOT/.git" ]]; then git -C "$ROOT" ls-files -z; fi)
 if "$tracked_debris"; then
   fail "tracked package debris found in release content"
 fi
+
+python3 - "$ROOT" "$version_h" <<'PYCODE'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+version = sys.argv[2]
+header = (root / "src/SwitchBank.h").read_text()
+readme = (root / "README.md").read_text()
+tail = readme.split("## Version history", 1)[1]
+assert "```text\n" + version + "\n```" in tail, "README current version disagrees"
+assert "See [CHANGELOG.md](CHANGELOG.md) for detailed release history." in tail, "missing history link"
+numeric = [re.search(r"^#define SWITCHBANK_VERSION_" + part + r" (\d+)$", header, re.M).group(1)
+           for part in ("MAJOR", "MINOR", "PATCH")]
+assert ".".join(numeric) == version, "numeric version declarations disagree"
+changelog = (root / "CHANGELOG.md").read_text()
+assert re.search(r"^## \[" + re.escape(version) + r"\] - \d{4}-\d{2}-\d{2}$", changelog, re.M), "missing current changelog"
+assert "## [1.2.0] - 2026-09-01" in changelog and "## [1.1.0]" in changelog, "missing release history"
+PYCODE
 
 echo "PASS: release contracts"

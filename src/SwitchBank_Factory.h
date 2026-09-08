@@ -27,10 +27,17 @@
 #define SWITCHBANK_HAS_INITIALIZER_LIST 0
 #endif
 
+#if __cplusplus >= 201402L
+#define SWITCHBANK_CONSTEXPR14 constexpr
+#else
+#define SWITCHBANK_CONSTEXPR14 inline
+#endif
+
 // ---- Mask helpers ---- //
 
 /**
  * @brief Build an active-low mask where all bits are active-low for N inputs.
+ *
  * @tparam N Number of inputs (1..32).
  * @return Active-low mask (bit=1 means active-low).
  */
@@ -38,11 +45,13 @@ template <size_t N>
 constexpr uint32_t mask_all_active_low() noexcept
 {
     static_assert(N > 0 && N <= 32, "mask_all_active_low<N>: N must be 1..32");
-    return (N == 32) ? 0xFFFFFFFFu : ((1u << N) - 1u);
+    // Widen before shifting; the full-width branch avoids shifting by 32.
+    return (N == 32) ? 0xFFFFFFFFu : ((uint32_t{1} << N) - 1u);
 }
 
 /**
  * @brief Build an active-low mask where all bits are active-high for N inputs.
+ *
  * @tparam N Number of inputs (1..32).
  * @return Active-low mask (all zeros => active-high).
  */
@@ -55,17 +64,14 @@ constexpr uint32_t mask_all_active_high() noexcept
 
 /**
  * @brief Build a mask where the listed indices are active-high; all others active-low.
+ *
  * @tparam N Total inputs (1..32).
  * @tparam K Number of indices provided.
- * @param active_high_indices Indices (0..N-1) that should be active-high.
+ * @param active_high_indices Indices that should be active-high; duplicates are harmless and indices >= N are ignored.
  * @return Active-low mask (bit=1 means active-low).
  */
 template <size_t N, size_t K>
-#if __cplusplus >= 201402L
-constexpr uint32_t mask_from_active_high_indices(const uint8_t (&active_high_indices)[K]) noexcept
-#else
-inline uint32_t mask_from_active_high_indices(const uint8_t (&active_high_indices)[K]) noexcept
-#endif
+SWITCHBANK_CONSTEXPR14 uint32_t mask_from_active_high_indices(const uint8_t (&active_high_indices)[K]) noexcept
 {
     static_assert(N > 0 && N <= 32, "mask_from_active_high_indices<N>: N must be 1..32");
     uint32_t mask = mask_all_active_low<N>();
@@ -74,19 +80,21 @@ inline uint32_t mask_from_active_high_indices(const uint8_t (&active_high_indice
         const uint8_t idx = active_high_indices[i];
         if (idx < N)
         {
-            mask &= ~(1u << idx);
+            // Complement in 32 bits so clearing a low bit preserves upper inputs.
+            mask &= ~(uint32_t{1} << idx);
         } ///< Clear bit → active-high.
     }
     return mask;
 }
 
+#if SWITCHBANK_HAS_INITIALIZER_LIST
 /**
  * @brief Runtime variant (initializer_list) of mask_from_active_high_indices().
+ *
  * @tparam N Total inputs (1..32).
- * @param active_high_indices Indices (0..N-1) that should be active-high.
+ * @param active_high_indices Indices that should be active-high; duplicates are harmless and indices >= N are ignored.
  * @return Active-low mask (bit=1 means active-low).
  */
-#if SWITCHBANK_HAS_INITIALIZER_LIST
 template <size_t N>
 inline uint32_t mask_from_active_high_indices(std::initializer_list<uint8_t> active_high_indices) noexcept
 {
@@ -95,7 +103,7 @@ inline uint32_t mask_from_active_high_indices(std::initializer_list<uint8_t> act
     {
         if (idx < N)
         {
-            mask &= ~(1u << idx);
+            mask &= ~(uint32_t{1} << idx);
         } ///< Clear bit → active-high.
     }
     return mask;
@@ -104,6 +112,7 @@ inline uint32_t mask_from_active_high_indices(std::initializer_list<uint8_t> act
 
 /**
  * @brief Runtime variant without STL containers.
+ *
  * @tparam N Total inputs (1..32).
  * @return Active-low mask with no active-high indices (all active-low).
  */
@@ -115,7 +124,9 @@ inline uint32_t mask_from_active_high_indices() noexcept
 
 /**
  * @brief Runtime variant without STL containers.
+ *
  * @tparam N Total inputs (1..32).
+ * @tparam Rest Additional index types, each convertible to uint8_t.
  * @param active_high_index First active-high index (0..N-1).
  * @param rest Additional active-high indices (0..N-1).
  * @return Active-low mask (bit=1 means active-low).
@@ -126,23 +137,20 @@ inline uint32_t mask_from_active_high_indices(uint8_t active_high_index, Rest...
     uint32_t mask = mask_from_active_high_indices<N>(rest...);
     if (active_high_index < N)
     {
-        mask &= ~(1u << active_high_index);
+        mask &= ~(uint32_t{1} << active_high_index);
     } ///< Clear bit -> active-high.
     return mask;
 }
 
 /**
  * @brief Build a mask from a per-bit boolean array.
+ *
  * @tparam N Total inputs (1..32).
  * @param active_low Per-bit polarity array (N entries).
  * @return Active-low mask (bit=1 means active-low).
  */
 template <size_t N>
-#if __cplusplus >= 201402L
-constexpr uint32_t mask_from_active_low_array(const bool (&active_low)[N]) noexcept
-#else
-inline uint32_t mask_from_active_low_array(const bool (&active_low)[N]) noexcept
-#endif
+SWITCHBANK_CONSTEXPR14 uint32_t mask_from_active_low_array(const bool (&active_low)[N]) noexcept
 {
     static_assert(N > 0 && N <= 32, "mask_from_active_low_array<N>: N must be 1..32");
     uint32_t mask = 0u;
@@ -150,7 +158,7 @@ inline uint32_t mask_from_active_low_array(const bool (&active_low)[N]) noexcept
     {
         if (active_low[i])
         {
-            mask |= (1u << i);
+            mask |= (uint32_t{1} << i);
         } ///< Set bit → active-low.
     }
     return mask;
@@ -160,6 +168,7 @@ inline uint32_t mask_from_active_low_array(const bool (&active_low)[N]) noexcept
 
 /**
  * @brief Create a SwitchBank with a fast per-key reader (no context). LSB-first packing.
+ *
  * @tparam N Number of inputs (1..32).
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in ms (0 disables).
@@ -178,6 +187,7 @@ inline SwitchBank<N> makeSwitchBankPins(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a SwitchBank with a context-aware reader. LSB-first packing.
+ *
  * @tparam N Number of inputs (1..32).
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in ms (0 disables).
@@ -198,6 +208,7 @@ inline SwitchBank<N> makeSwitchBankCtx(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a SwitchBank with an explicit runtime mask (already computed). LSB-first packing.
+ *
  * @tparam N Number of inputs (1..32).
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in ms (0 disables).
@@ -218,6 +229,7 @@ inline SwitchBank<N> makeSwitchBankPinsMasked(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a SwitchBank with an explicit runtime mask and a context-aware reader. LSB-first packing.
+ *
  * @tparam N Number of inputs (1..32).
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in ms (0 disables).
@@ -242,6 +254,7 @@ inline SwitchBank<N> makeSwitchBankCtxMasked(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a SwitchBank with a validity-aware context reader.
+ *
  * @tparam N Number of inputs (1..32).
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in milliseconds.
@@ -262,6 +275,7 @@ inline SwitchBank<N> makeSwitchBankResultCtx(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a SwitchBank with a validity-aware context reader and explicit polarity mask.
+ *
  * @tparam N Number of inputs (1..32).
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in milliseconds.
@@ -284,6 +298,7 @@ inline SwitchBank<N> makeSwitchBankResultCtxMasked(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a SwitchBank using one coherent packed electrical acquisition.
+ *
  * @tparam N Number of inputs (1..32).
  * @param keys Key array retained for API consistency. Packed bit i represents bank input i.
  * @param debounce_ms Debounce window in milliseconds.
@@ -304,6 +319,7 @@ inline SwitchBank<N> makeSwitchBankPacked(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a coherent packed-reader SwitchBank with an explicit runtime polarity mask.
+ *
  * @tparam N Number of inputs (1..32).
  * @param keys Key array retained for API consistency.
  * @param debounce_ms Debounce window in milliseconds.
@@ -328,6 +344,7 @@ inline SwitchBank<N> makeSwitchBankPackedMasked(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a SwitchBank with a fast per-key reader and **reversed** bit order.
+ *
  * @tparam N Number of inputs (1..32).
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in ms (0 disables).
@@ -346,6 +363,7 @@ inline SwitchBank<N, -1, true> makeSwitchBankPinsRev(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a SwitchBank with a context-aware reader and **reversed** bit order.
+ *
  * @tparam N Number of inputs (1..32).
  * @param keys Key array (pins/identifiers).
  * @param debounce_ms Debounce window in ms (0 disables).
@@ -368,6 +386,7 @@ inline SwitchBank<N, -1, true> makeSwitchBankCtxRev(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a SwitchBank with **compile-time** polarity and optional reversed bit order.
+ *
  * @tparam N Number of inputs (1..32).
  * @tparam PolMask Compile-time active-low mask (bit=1 means active-low).
  * @tparam ReverseOrder If true, reverse bit packing (bit 0 ← keys[N-1]).
@@ -393,6 +412,7 @@ makeSwitchBankPinsCT(const uint8_t (&keys)[N],
 
 /**
  * @brief Create a SwitchBank with **compile-time** polarity and optional reversed bit order (context-aware reader).
+ *
  * @tparam N Number of inputs (1..32).
  * @tparam PolMask Compile-time active-low mask (bit=1 means active-low).
  * @tparam ReverseOrder If true, reverse bit packing (bit 0 ← keys[N-1]).
@@ -423,6 +443,7 @@ makeSwitchBankCtxCT(const uint8_t (&keys)[N],
 
 /**
  * @brief Fluent builder for SwitchBank creation (runtime polarity).
+ *
  * @tparam N Number of inputs (1..32).
  */
 template <size_t N>
@@ -441,13 +462,15 @@ struct SwitchBankBuilder
 
     /**
      * @brief Construct a builder bound to a key array.
-     * @param key_array Keys to use (pins/identifiers).
+     *
+     * @param key_array Keys borrowed until build(); the array must outlive this builder.
      */
     explicit SwitchBankBuilder(const uint8_t (&key_array)[N]) noexcept
         : keys(key_array) {}
 
     /**
      * @brief Set debounce window in ms.
+     *
      * @param ms Debounce time (0 disables).
      * @return *this for chaining.
      */
@@ -459,6 +482,7 @@ struct SwitchBankBuilder
 
     /**
      * @brief Set all inputs to active-low.
+     *
      * @return *this for chaining.
      */
     SwitchBankBuilder &withAllActiveLow()
@@ -469,6 +493,7 @@ struct SwitchBankBuilder
 
     /**
      * @brief Set all inputs to active-high.
+     *
      * @return *this for chaining.
      */
     SwitchBankBuilder &withAllActiveHigh()
@@ -479,6 +504,7 @@ struct SwitchBankBuilder
 
     /**
      * @brief Provide an explicit active-low mask (bit=1 means active-low).
+     *
      * @param m Mask to use.
      * @return *this for chaining.
      */
@@ -490,6 +516,7 @@ struct SwitchBankBuilder
 
     /**
      * @brief Compute mask from a list of indices that are active-high; others active-low.
+     *
      * @tparam K Number of indices provided.
      * @param idx Indices (0..N-1) that are active-high.
      * @return *this for chaining.
@@ -503,6 +530,7 @@ struct SwitchBankBuilder
 
     /**
      * @brief Inject a time source for no-arg update()/sync()/forceCommitForCommissioning().
+     *
      * @param tf Time function returning milliseconds.
      * @return *this for chaining.
      */
@@ -514,6 +542,7 @@ struct SwitchBankBuilder
 
     /**
      * @brief Use a per-key reader (fast path).
+     *
      * @param rp Reader function: key → electrical level HIGH/LOW.
      * @return *this for chaining.
      */
@@ -529,6 +558,7 @@ struct SwitchBankBuilder
 
     /**
      * @brief Use a context-aware reader.
+     *
      * @param rc Reader function: (ctx, key) → electrical level HIGH/LOW.
      * @param c Context pointer (nullable).
      * @return *this for chaining.
@@ -545,6 +575,7 @@ struct SwitchBankBuilder
 
     /**
      * @brief Use a validity-aware context reader.
+     *
      * @param rr Reader returning a valid/invalid electrical sample for each key.
      * @param c Context pointer (nullable).
      * @return *this for chaining.
@@ -561,6 +592,7 @@ struct SwitchBankBuilder
 
     /**
      * @brief Use one coherent packed hardware reader.
+     *
      * @param rp Reader returning all electrical bank inputs in one snapshot.
      * @param c Context pointer (nullable).
      * @return *this for chaining.
@@ -577,6 +609,8 @@ struct SwitchBankBuilder
 
     /**
      * @brief Check whether any supported reader has been configured.
+     *
+     * @return true if a reader callback is non-null; does not probe hardware.
      */
     bool hasReader() const noexcept
     {
@@ -584,22 +618,26 @@ struct SwitchBankBuilder
                (read_result != nullptr) || (read_packed != nullptr);
     }
 
-    /**
-     * @brief Build the SwitchBank instance (runtime polarity, LSB-first).
-     *        Requires withReader(...) to be configured first.
-     * @return SwitchBank<N> instance (by value, zero-heap).
-     */
-
 #ifdef SWITCHBANK_ENABLE_COMMIT_CALLBACK
     using OnCommitFn =
         void (*)(const typename SwitchBank<N>::SwitchBankSnapshot &) noexcept;
-    /// Optional: callback fired when a new stable value commits.
+    /// @brief Set the callback copied into the built bank.
+    ///
+    /// @param cb Transition callback in the caller context; null disables it.
+    /// @return This builder for chaining.
     SwitchBankBuilder &onCommit(OnCommitFn cb) noexcept
     {
         on_commit_ = cb;
         return *this;
     }
 #endif
+    /**
+     * @brief Build a bank with the selected reader, polarity and debounce settings.
+     *
+     * @return Independent bank with copied keys and borrowed context/clock/callback.
+     * @note A reader must be configured; debug builds assert otherwise. Without assertions,
+     *       an unconfigured bank reports MissingReader on acquisition. Context must outlive the bank.
+     */
     SwitchBank<N> build() const
     {
         // Require an explicit reader to avoid silently creating an inert bank.
@@ -644,3 +682,5 @@ struct SwitchBankBuilder
     typename SwitchBank<N>::OnCommitFn on_commit_{nullptr};
 #endif
 };
+
+#undef SWITCHBANK_CONSTEXPR14

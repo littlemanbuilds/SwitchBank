@@ -17,10 +17,10 @@
 
 // ---- Version ---- //
 
-#define SWITCHBANK_VERSION "1.2.0"
+#define SWITCHBANK_VERSION "1.2.1"
 #define SWITCHBANK_VERSION_MAJOR 1
 #define SWITCHBANK_VERSION_MINOR 2
-#define SWITCHBANK_VERSION_PATCH 0
+#define SWITCHBANK_VERSION_PATCH 1
 
 
 /**
@@ -44,13 +44,22 @@ struct SwitchBankReadResult
     bool level_high; ///< Electrical input level when valid is true.
     bool valid;      ///< True when the hardware acquisition succeeded.
 
+    /// @brief Construct an electrical sample; defaults to an invalid result.
+    ///
+    /// @param high Electrical HIGH when true, LOW when false; ignored if invalid.
+    /// @param is_valid Whether the acquisition succeeded.
     SwitchBankReadResult(bool high = false, bool is_valid = false) noexcept
         : level_high{high}, valid{is_valid} {}
 
     /// @brief Build a successful electrical-level result.
+    ///
+    /// @param high Electrical HIGH when true, LOW when false.
+    /// @return A valid acquisition result containing the supplied electrical levels.
     static SwitchBankReadResult success(bool high) noexcept { return SwitchBankReadResult(high, true); }
 
     /// @brief Build a failed acquisition result.
+    ///
+    /// @return An invalid acquisition result whose level payload must be ignored.
     static SwitchBankReadResult failure() noexcept { return SwitchBankReadResult(false, false); }
 };
 
@@ -66,16 +75,25 @@ struct SwitchBankPackedReadResult
     uint32_t levels_high; ///< Electrical HIGH mask in bank-input order.
     bool valid;           ///< True when the complete packed acquisition succeeded.
 
+    /// @brief Construct a coherent electrical sample; defaults to invalid.
+    ///
+    /// @param levels Electrical HIGH bits in input order; ignored if invalid.
+    /// @param is_valid Whether the entire acquisition succeeded.
     SwitchBankPackedReadResult(uint32_t levels = 0u, bool is_valid = false) noexcept
         : levels_high{levels}, valid{is_valid} {}
 
     /// @brief Build a successful packed electrical-level result.
+    ///
+    /// @param levels Electrical HIGH bits in bank-input order.
+    /// @return A valid acquisition result containing the supplied electrical levels.
     static SwitchBankPackedReadResult success(uint32_t levels) noexcept
     {
         return SwitchBankPackedReadResult(levels, true);
     }
 
     /// @brief Build a failed packed acquisition result.
+    ///
+    /// @return An invalid acquisition result whose level payload must be ignored.
     static SwitchBankPackedReadResult failure() noexcept
     {
         return SwitchBankPackedReadResult(0u, false);
@@ -149,6 +167,7 @@ public:
 
     /**
      * @brief Latch policy for the legacy changed() flag.
+     *
      * @note ManualClear is recommended. ClearOnRead is retained for v1.x compatibility; new code
      *       should prefer consumeChanged() or consumeEdges() so observation is explicit.
      */
@@ -180,6 +199,7 @@ public:
 #ifdef SWITCHBANK_ENABLE_COMMIT_CALLBACK
     /**
      * @brief Optional callback invoked after a stable state transition is committed.
+     *
      * @note Called in the caller's context; keep it fast and non-blocking.
      */
     using OnCommitFn = void (*)(const SwitchBankSnapshot &) noexcept;
@@ -189,6 +209,7 @@ public:
 
     /**
      * @brief Construct with a legacy per-key reader.
+     *
      * @param keys Array of N keys (pins or expander identifiers).
      * @param stable_ms Debounce window in milliseconds (0 disables debouncing).
      * @param active_low_mask Runtime polarity mask (bit=1 -> active-low).
@@ -210,6 +231,7 @@ public:
 
     /**
      * @brief Construct with a legacy context-aware per-key reader.
+     *
      * @param keys Array of N keys.
      * @param stable_ms Debounce window in milliseconds.
      * @param active_low_mask Runtime polarity mask.
@@ -234,9 +256,16 @@ public:
 
     /**
      * @brief Construct an explicitly unconfigured context-reader bank.
+     *
      * @note This overload resolves nullptr source compatibility after v1.2 added additional
      *       callback types. sync()/update() will report MissingReader until a configured bank
      *       instance is used.
+     *
+     * @param keys N identifiers copied into the bank.
+     * @param stable_ms Debounce window in milliseconds; zero disables it.
+     * @param active_low_mask Runtime active-low bits in logical packed order.
+     * @param ctx Unowned context stored for compatibility; no reader will use it.
+     * @param timeFn Optional millisecond clock.
      */
     SwitchBank(const uint8_t (&keys)[N],
                uint16_t stable_ms,
@@ -256,6 +285,7 @@ public:
 
     /**
      * @brief Construct with a validity-aware context reader.
+     *
      * @param keys Array of N keys.
      * @param stable_ms Debounce window in milliseconds.
      * @param active_low_mask Runtime polarity mask.
@@ -280,6 +310,7 @@ public:
 
     /**
      * @brief Construct with one coherent packed reader.
+     *
      * @param keys Array of N key identifiers retained for API consistency. The packed callback
      *             returns bits in bank-input order and therefore does not receive these keys.
      * @param stable_ms Debounce window in milliseconds.
@@ -307,12 +338,14 @@ public:
 
     /**
      * @brief Synchronize to current hardware without emitting switch edges.
+     *
      * @return true when a complete valid acquisition established the baseline.
      */
     bool sync() noexcept { return sync(now_ms()); }
 
     /**
      * @brief Synchronize to current hardware without emitting edges.
+     *
      * @param now Timestamp in milliseconds.
      * @return true on valid acquisition; false on missing/failed hardware read.
      *
@@ -341,6 +374,8 @@ public:
 
     /**
      * @brief Return a plain snapshot of current stable state and health metadata.
+     *
+     * @return A copy of stable state, retained edges and health metadata; no acquisition occurs.
      */
     SWITCHBANK_NODISCARD SwitchBankSnapshot snapshot() const noexcept
     {
@@ -362,25 +397,46 @@ public:
     /** @brief Number of switches in the bank. */
     static constexpr uint8_t kSize = static_cast<uint8_t>(N);
 
-    /** @brief Replace or inject the millisecond time source. */
+    /**
+     * @brief Replace or inject the millisecond time source.
+     *
+     * @param tf Optional millisecond clock; null restores the default clock behavior.
+     */
     void setTimeSource(TimeFn tf) noexcept { setTimeFn(tf); }
 
 #ifdef SWITCHBANK_ENABLE_COMMIT_CALLBACK
-    /** @brief Set the optional state-transition callback. */
+    /**
+     * @brief Set the optional state-transition callback.
+     *
+     * @param cb Callback invoked in the caller context after a stable transition; null disables it.
+     */
     void setOnCommit(OnCommitFn cb) noexcept { on_commit_ = cb; }
 #endif
 
-    /** @brief Set the minimum interval between hardware acquisition attempts. */
+    /**
+     * @brief Set the minimum interval between hardware acquisition attempts.
+     *
+     * @param ms Minimum milliseconds between attempts; zero disables throttling.
+     */
     void setMinPollMs(uint16_t ms) noexcept { min_poll_ms_ = ms; }
 
-    /** @brief Configure legacy changed-latch behaviour. */
+    /**
+     * @brief Configure legacy changed-latch behaviour.
+     *
+     * @param m ManualClear or legacy ClearOnRead policy for changed(), not edge masks.
+     */
     void setLatchMode(LatchMode m) noexcept { latch_mode_ = m; }
 
-    /** @brief Set the per-bit debounce window. */
+    /**
+     * @brief Set the per-bit debounce window.
+     *
+     * @param ms Required observed stability in milliseconds; zero disables debounce.
+     */
     void setDebounceMs(uint16_t ms) noexcept { debounce_ms_ = ms; }
 
     /**
      * @brief Poll hardware and update the debounced state.
+     *
      * @param now_ms Timestamp in milliseconds.
      * @return true only when the stable packed value changed.
      *
@@ -436,11 +492,11 @@ public:
 
             if (b.stable)
             {
-                next |= (1u << i);
+                next |= (uint32_t{1} << i);
             }
             else
             {
-                next &= ~(1u << i);
+                next &= ~(uint32_t{1} << i);
             }
         }
 
@@ -449,6 +505,7 @@ public:
 
     /**
      * @brief Re-acquire and immediately accept the current hardware state, bypassing debounce.
+     *
      * @param now Timestamp in milliseconds.
      * @return true when the hardware acquisition succeeded.
      * @note Intended for commissioning/reconfiguration, not normal runtime input processing.
@@ -472,6 +529,7 @@ public:
 
     /**
      * @brief Re-acquire and immediately accept the current hardware state using the configured clock.
+     *
      * @return true when the hardware acquisition succeeded.
      */
     bool forceCommitForCommissioning() noexcept { return forceCommitForCommissioning(now_ms()); }
@@ -479,6 +537,7 @@ public:
 #ifndef SWITCHBANK_NO_LEGACY_COMMIT
     /**
      * @brief Legacy alias for forceCommitForCommissioning().
+     *
      * @note Retained for v1.x source compatibility. New code should use the explicit commissioning name.
      */
     SWITCHBANK_DEPRECATED("Use forceCommitForCommissioning(); runtime code should normally use update().")
@@ -487,7 +546,11 @@ public:
         (void)forceCommitForCommissioning();
     }
 
-    /** @brief Legacy timestamped alias for forceCommitForCommissioning(now). */
+    /**
+     * @brief Legacy timestamped alias for forceCommitForCommissioning(now).
+     *
+     * @param now Acquisition timestamp in milliseconds.
+     */
     SWITCHBANK_DEPRECATED("Use forceCommitForCommissioning(now); runtime code should normally use update(now).")
     void commit(uint32_t now) noexcept
     {
@@ -497,8 +560,11 @@ public:
 
     /**
      * @brief Current stable packed value.
+     *
      * @note In legacy LatchMode::ClearOnRead, this also clears changed(). Prefer peekValue() for
      *       side-effect-free reads and consumeChanged()/consumeEdges() for explicit consumption.
+     *
+     * @return Stable logical packed value; ClearOnRead also clears the changed latch.
      */
     SWITCHBANK_NODISCARD uint32_t value() const noexcept override
     {
@@ -509,16 +575,32 @@ public:
         return current_;
     }
 
-    /** @brief Current stable packed value without side effects. */
+    /**
+     * @brief Current stable packed value without side effects.
+     *
+     * @return Stable logical packed value without consuming edges or the changed latch.
+     */
     SWITCHBANK_NODISCARD uint32_t peekValue() const noexcept override { return current_; }
 
-    /** @brief Previous stable value associated with the retained edge masks. */
+    /**
+     * @brief Previous stable value associated with the retained edge masks.
+     *
+     * @return Baseline for retained edges, reset to the current value by sync() or clearEdges().
+     */
     SWITCHBANK_NODISCARD uint32_t prevValue() const noexcept override { return previous_; }
 
-    /** @brief Whether a stable transition is currently latched. */
+    /**
+     * @brief Whether a stable transition is currently latched.
+     *
+     * @return True while a stable transition remains latched; clearing edges alone does not clear it.
+     */
     SWITCHBANK_NODISCARD bool changed() const noexcept override { return changed_; }
 
-    /** @brief Explicitly consume and clear the changed latch. */
+    /**
+     * @brief Explicitly consume and clear the changed latch.
+     *
+     * @return The previous latch state; retained edge masks are unchanged.
+     */
     bool consumeChanged() noexcept
     {
         const bool was_changed = changed_;
@@ -528,6 +610,7 @@ public:
 
     /**
      * @brief Explicitly consume retained edge masks and changed latch.
+     *
      * @return Edge masks and the durable change_sequence observed at consumption time.
      */
     SwitchBankEdges consumeEdges() noexcept
@@ -548,31 +631,62 @@ public:
     /** @brief Clear retained edge masks without changing the current stable value. */
     void clearEdges() noexcept override { previous_ = current_; }
 
-    /** @brief Number of switches in this bank. */
+    /**
+     * @brief Number of switches in this bank.
+     *
+     * @return Number of inputs, in the range 1..32.
+     */
     SWITCHBANK_NODISCARD uint8_t size() const noexcept override { return static_cast<uint8_t>(N); }
 
-    /** @brief Bitwise delta for the retained latest stable transition. */
+    /**
+     * @brief Bitwise delta for the retained latest stable transition.
+     *
+     * @return Bits differing between the current value and retained previous value.
+     */
     SWITCHBANK_NODISCARD uint32_t changedMask() const noexcept override { return current_ ^ previous_; }
 
-    /** @brief Retained OFF->ON transition mask. */
+    /**
+     * @brief Retained OFF->ON transition mask.
+     *
+     * @return Bits that changed from logical OFF to ON in the retained transition.
+     */
     SWITCHBANK_NODISCARD uint32_t risingMask() const noexcept override { return (~previous_) & current_ & valueMask_(); }
 
-    /** @brief Retained ON->OFF transition mask. */
+    /**
+     * @brief Retained ON->OFF transition mask.
+     *
+     * @return Bits that changed from logical ON to OFF in the retained transition.
+     */
     SWITCHBANK_NODISCARD uint32_t fallingMask() const noexcept override { return previous_ & (~current_) & valueMask_(); }
 
-    /** @brief Check whether bit i is currently ON. */
+    /**
+     * @brief Check whether bit i is currently ON.
+     *
+     * @param i Logical packed-bit index (0..N-1).
+     * @return True if logical bit i is ON; false for an out-of-range index.
+     */
     SWITCHBANK_NODISCARD bool isOn(uint8_t i) const noexcept
     {
         return (i < static_cast<uint8_t>(N)) && (((current_ >> i) & 1u) != 0u);
     }
 
-    /** @brief Check whether bit i rose on the retained transition. */
+    /**
+     * @brief Check whether bit i rose on the retained transition.
+     *
+     * @param i Logical packed-bit index (0..N-1).
+     * @return True if logical bit i rose in the retained transition; false out of range.
+     */
     SWITCHBANK_NODISCARD bool rose(uint8_t i) const noexcept
     {
         return (i < static_cast<uint8_t>(N)) && (((risingMask() >> i) & 1u) != 0u);
     }
 
-    /** @brief Check whether bit i fell on the retained transition. */
+    /**
+     * @brief Check whether bit i fell on the retained transition.
+     *
+     * @param i Logical packed-bit index (0..N-1).
+     * @return True if logical bit i fell in the retained transition; false out of range.
+     */
     SWITCHBANK_NODISCARD bool fell(uint8_t i) const noexcept
     {
         return (i < static_cast<uint8_t>(N)) && (((fallingMask() >> i) & 1u) != 0u);
@@ -580,6 +694,7 @@ public:
 
     /**
      * @brief Change runtime polarity and resynchronize atomically from the caller's perspective.
+     *
      * @param mask New active-low mask.
      * @return true when the new interpretation was established from a valid hardware sample.
      * @note No-op returning true when compile-time polarity is used. On acquisition failure, the
@@ -590,7 +705,13 @@ public:
         return setActiveLowMask(mask, now_ms());
     }
 
-    /** @brief Timestamped overload of setActiveLowMask(). */
+    /**
+     * @brief Timestamped overload of setActiveLowMask().
+     *
+     * @param mask New active-low bits in logical packed order; bits above N are ignored.
+     * @param now Acquisition timestamp in milliseconds.
+     * @return True after successful resynchronization or a compile-time-policy no-op; false restores the old mask and stable state.
+     */
     bool setActiveLowMask(uint32_t mask, uint32_t now) noexcept
     {
         if (hasCompileTimePolarity())
@@ -609,45 +730,97 @@ public:
         return false;
     }
 
-    /** @brief Effective active-low mask. */
+    /**
+     * @brief Effective active-low mask.
+     *
+     * @return Effective polarity mask in logical packed-bit order; bits above N are zero.
+     */
     SWITCHBANK_NODISCARD uint32_t activeLowMask() const noexcept { return effectiveMask(); }
 
     // ---- Validity / freshness ---- //
 
-    /** @brief Whether any supported hardware reader is configured. */
+    /**
+     * @brief Whether any supported hardware reader is configured.
+     *
+     * @return True when a reader is configured, without probing hardware connectivity.
+     */
     SWITCHBANK_NODISCARD bool configured() const noexcept { return hasReader_(); }
 
-    /** @brief Whether the most recent attempted hardware acquisition succeeded. */
+    /**
+     * @brief Whether the most recent attempted hardware acquisition succeeded.
+     *
+     * @return True if the most recent attempted acquisition succeeded; false before the first sample.
+     */
     SWITCHBANK_NODISCARD bool valid() const noexcept override { return valid_; }
 
-    /** @brief Whether at least one successful hardware acquisition has occurred. */
+    /**
+     * @brief Whether at least one successful hardware acquisition has occurred.
+     *
+     * @return True after any successful acquisition, even if a later acquisition fails.
+     */
     SWITCHBANK_NODISCARD bool hasSample() const noexcept { return has_sample_; }
 
-    /** @brief Most recent acquisition error. */
+    /**
+     * @brief Most recent acquisition error.
+     *
+     * @return Error from the latest acquisition attempt; None after success or before any attempt.
+     */
     SWITCHBANK_NODISCARD SwitchBankReadError lastError() const noexcept { return last_error_; }
 
-    /** @brief Timestamp of the latest successful acquisition. */
+    /**
+     * @brief Timestamp of the latest successful acquisition.
+     *
+     * @return Latest successful acquisition time in milliseconds, or zero before a sample.
+     */
     SWITCHBANK_NODISCARD uint32_t sampleMs() const noexcept override { return last_sample_ms_; }
 
-    /** @brief Timestamp of the latest stable state transition. */
+    /**
+     * @brief Timestamp of the latest stable state transition.
+     *
+     * @return Latest stable transition time in milliseconds, or zero before a transition.
+     */
     SWITCHBANK_NODISCARD uint32_t changeMs() const noexcept { return last_change_ms_; }
 
-    /** @brief Timestamp of the latest acquisition attempt. */
+    /**
+     * @brief Timestamp of the latest acquisition attempt.
+     *
+     * @return Latest acquisition attempt time in milliseconds, or zero before an attempt.
+     */
     SWITCHBANK_NODISCARD uint32_t lastAttemptMs() const noexcept { return last_attempt_ms_; }
 
-    /** @brief Timestamp of the latest failed acquisition. */
+    /**
+     * @brief Timestamp of the latest failed acquisition.
+     *
+     * @return Latest failed acquisition time in milliseconds, or zero before a failure.
+     */
     SWITCHBANK_NODISCARD uint32_t lastErrorMs() const noexcept { return last_error_ms_; }
 
-    /** @brief Successful acquisition sequence; monotonic across sync(). */
+    /**
+     * @brief Successful acquisition sequence; monotonic across sync().
+     *
+     * @return Successful acquisition count modulo 2^32; sync() increments it without resetting it.
+     */
     SWITCHBANK_NODISCARD uint32_t sequence() const noexcept override { return sequence_; }
 
-    /** @brief Stable transition sequence; monotonic across sync(). */
+    /**
+     * @brief Stable transition sequence; monotonic across sync().
+     *
+     * @return Stable transition count modulo 2^32; sync() does not increment or reset it.
+     */
     SWITCHBANK_NODISCARD uint32_t changeSequence() const noexcept override { return change_sequence_; }
 
-    /** @brief Successful resynchronization generation. */
+    /**
+     * @brief Successful resynchronization generation.
+     *
+     * @return Successful explicit resynchronization count modulo 2^32.
+     */
     SWITCHBANK_NODISCARD uint32_t generation() const noexcept { return generation_; }
 
-    /** @brief Gather health/freshness metadata without changing state. */
+    /**
+     * @brief Gather health/freshness metadata without changing state.
+     *
+     * @return A copy of health and freshness metadata; no acquisition or consumption occurs.
+     */
     SWITCHBANK_NODISCARD SwitchBankStatus status() const noexcept
     {
         SwitchBankStatus st;
@@ -667,24 +840,38 @@ public:
 
     /**
      * @brief Compatibility alias for the last stable transition timestamp.
+     *
      * @note Use sampleMs() for freshness. A stable, healthy bank may have an old change timestamp.
+     *
+     * @return Latest stable transition time in milliseconds, not the latest sample time.
      */
     SWITCHBANK_NODISCARD uint32_t lastCommitMs() const noexcept { return last_change_ms_; }
 
     /**
      * @brief Total stable state transitions since construction.
+     *
      * @note Unlike v1.1, this is not reset by sync(). Use generation() to identify resynchronization.
+     *
+     * @return Stable transition count modulo 2^32, retained across sync().
      */
     SWITCHBANK_NODISCARD uint32_t changeCount() const noexcept { return change_sequence_; }
 
-    /** @brief value() as uint8_t for N <= 8. */
+    /** @brief value() as uint8_t for N <= 8.
+     *
+     * @tparam M Accessor width constraint; leave at its default N. Enabled for M <= 8.
+     * @return value() narrowed to eight bits, including its legacy latch side effect.
+     */
     template <size_t M = N>
     typename switchbank::compat::enable_if<(M <= 8), uint8_t>::type value8() const noexcept
     {
         return static_cast<uint8_t>(value());
     }
 
-    /** @brief changedMask() as uint8_t for N <= 8. */
+    /** @brief changedMask() as uint8_t for N <= 8.
+     *
+     * @tparam M Accessor width constraint; leave at its default N. Enabled for M <= 8.
+     * @return Retained changed bits narrowed to eight bits.
+     */
     template <size_t M = N>
     typename switchbank::compat::enable_if<(M <= 8), uint8_t>::type changedMask8() const noexcept
     {
@@ -701,30 +888,53 @@ private:
 
     // ---- Compile-time / runtime polarity ---- //
 
+    /// @brief Select the compile-time polarity policy.
+    ///
+    /// @return True if PolarityMask is nonnegative; -1 selects runtime polarity.
     static constexpr bool hasCompileTimePolarity() noexcept { return (PolarityMask >= 0); }
 
+    /// @brief Limit state to N bits without a shift by the integer width.
+    ///
+    /// @return Low N bits set, including all 32 bits when N is 32.
     static constexpr uint32_t valueMask_() noexcept
     {
-        return (N == 32) ? 0xFFFFFFFFu : ((1u << N) - 1u);
+        return (N == 32) ? 0xFFFFFFFFu : ((uint32_t{1} << N) - 1u);
     }
 
+    /// @brief Normalize compile-time polarity to the bank width.
+    ///
+    /// @return Compile-time active-low bits, or zero for runtime polarity.
     static constexpr uint32_t compileTimeMask() noexcept
     {
         return hasCompileTimePolarity() ? (static_cast<uint32_t>(PolarityMask) & valueMask_()) : 0u;
     }
 
+    /// @brief Choose active-low polarity for every input by default.
+    ///
+    /// @return Low N bits set.
     static constexpr uint32_t defaultActiveLowMaskRuntime() noexcept { return valueMask_(); }
 
+    /// @brief Resolve constructor polarity with compile-time policy taking precedence.
+    ///
+    /// @param runtime_mask Requested runtime active-low bits in logical order.
+    /// @return Selected polarity mask truncated to N bits.
     static constexpr uint32_t initialMaskForCtor(uint32_t runtime_mask) noexcept
     {
         return hasCompileTimePolarity() ? compileTimeMask() : (runtime_mask & valueMask_());
     }
 
+    /// @brief Resolve the initial stored polarity mask.
+    ///
+    /// @param runtime_mask Requested runtime active-low bits in logical order.
+    /// @return Compile-time mask when configured, otherwise truncated runtime mask.
     uint32_t resolveInitialMask(uint32_t runtime_mask) const noexcept
     {
         return initialMaskForCtor(runtime_mask);
     }
 
+    /// @brief Read the selected polarity policy.
+    ///
+    /// @return Active-low mask in logical packed-bit order, truncated to N bits.
     uint32_t effectiveMask() const noexcept
     {
         return hasCompileTimePolarity() ? compileTimeMask() : (active_low_mask_ & valueMask_());
@@ -732,6 +942,12 @@ private:
 
     // ---- Hardware acquisition ---- //
 
+    // Reader contexts and function pointers are borrowed. Callbacks must remain valid
+    // for the bank lifetime; callers serialize all acquisition and mutation operations.
+
+    /// @brief Copy identifiers so the bank does not borrow the caller array.
+    ///
+    /// @param keys N input identifiers copied in acquisition order.
     void copyKeys(const uint8_t (&keys)[N]) noexcept
     {
         for (size_t i = 0u; i < N; ++i)
@@ -740,6 +956,9 @@ private:
         }
     }
 
+    /// @brief Check reader configuration without attempting hardware access.
+    ///
+    /// @return True when at least one reader callback is non-null.
     bool hasReader_() const noexcept
     {
         return (packed_read_fn_ != nullptr) || (read_result_fn_ != nullptr) ||
@@ -748,6 +967,7 @@ private:
 
     /**
      * @brief Acquire all electrical inputs exactly once.
+     *
      * @param levels_high Output electrical HIGH mask in bank-input order.
      * @return true when the complete bank acquisition is valid.
      */
@@ -777,7 +997,7 @@ private:
                 }
                 if (result.level_high)
                 {
-                    levels_high |= (1u << i);
+                    levels_high |= (uint32_t{1} << i);
                 }
             }
             return true;
@@ -789,7 +1009,7 @@ private:
             {
                 if (read_pin_fn_(keys_[i]))
                 {
-                    levels_high |= (1u << i);
+                    levels_high |= (uint32_t{1} << i);
                 }
             }
             return true;
@@ -801,7 +1021,7 @@ private:
             {
                 if (read_fn_(ctx_, keys_[i]))
                 {
-                    levels_high |= (1u << i);
+                    levels_high |= (uint32_t{1} << i);
                 }
             }
             return true;
@@ -812,8 +1032,10 @@ private:
 
     /**
      * @brief Acquire, normalize polarity/order, and update freshness metadata.
+     *
      * @param now Timestamp in milliseconds.
      * @param logical_packed Output logical packed value when successful.
+     * @return True only for a complete valid sample; output is unchanged on failure.
      */
     bool acquireLogicalPacked_(uint32_t now, uint32_t &logical_packed) noexcept
     {
@@ -832,6 +1054,7 @@ private:
             return false;
         }
 
+        // Electrical bits are in input order; polarity is indexed after reverse packing.
         const uint32_t mask = effectiveMask();
         uint32_t logical = 0u;
         const uint8_t n8 = static_cast<uint8_t>(N);
@@ -844,7 +1067,7 @@ private:
             const bool on = active_low ? !level_high : level_high;
             if (on)
             {
-                logical |= (1u << bi);
+                logical |= (uint32_t{1} << bi);
             }
         }
 
@@ -853,6 +1076,9 @@ private:
         return true;
     }
 
+    /// @brief Record successful acquisition without creating a state transition.
+    ///
+    /// @param now Successful acquisition time in milliseconds.
     void recordSuccess_(uint32_t now) noexcept
     {
         has_sample_ = true;
@@ -862,6 +1088,10 @@ private:
         ++sequence_;
     }
 
+    /// @brief Record a failed read and require fresh debounce evidence on recovery.
+    ///
+    /// @param now Failed acquisition time in milliseconds.
+    /// @param error MissingReader or AcquisitionFailed reason.
     void recordFailure_(uint32_t now, SwitchBankReadError error) noexcept
     {
         valid_ = false;
@@ -870,6 +1100,10 @@ private:
         acquisition_gap_ = true;
     }
 
+    /// @brief Establish raw and stable per-bit baselines without emitting edges.
+    ///
+    /// @param raw Logical packed value already normalized to N bits.
+    /// @param now Baseline timestamp in milliseconds.
     void seedDebounce_(uint32_t raw, uint32_t now) noexcept
     {
         for (uint8_t i = 0u; i < static_cast<uint8_t>(N); ++i)
@@ -881,6 +1115,11 @@ private:
         }
     }
 
+    /// @brief Commit a changed stable value before notifying the optional callback.
+    ///
+    /// @param next Proposed logical packed value; bits above N are ignored.
+    /// @param now_ms Transition timestamp in milliseconds.
+    /// @return True if state changed; unchanged input leaves edge metadata intact.
     bool commitIfChanged_(uint32_t next, uint32_t now_ms) noexcept
     {
         next &= valueMask_();

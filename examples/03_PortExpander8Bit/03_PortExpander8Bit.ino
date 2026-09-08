@@ -69,7 +69,7 @@ void setup()
     }
 
     // Configure expander pins as inputs with INPUT_PULLUP.
-    for (uint8_t i = 0; i < 8; ++i)
+    for (int i = 0; i < 8; ++i)
     {
         mcp.pinMode(EXP_PINS[i], INPUT_PULLUP);
     }
