@@ -4,7 +4,7 @@
 
 It is useful for DIP banks, slide switches, rotary/gear contact groups, mode selectors, button-style maintained contacts, and GPIO-expander inputs where the application wants a clean logical state instead of repeating polarity, debounce, and edge-detection code.
 
-Version **1.2.1** fixes mask arithmetic on 16-bit toolchains. It retains the v1.x usage model and the reliability features introduced in 1.2.0: failed acquisitions do not become switch states, coherent packed hardware reads are supported, freshness is separate from state-change time, and resynchronization preserves sequence history.
+Version **1.2.2** includes the 1.2.1 fix for mask arithmetic on 16-bit toolchains and updates the public package and beginner GPIO examples. It retains the v1.x usage model and the reliability features introduced in 1.2.0: failed acquisitions do not become switch states, coherent packed hardware reads are supported, freshness is separate from state-change time, and resynchronization preserves sequence history.
 
 ESP32-S3 remains the primary project target, but the core is deliberately portable and allocation-free.
 
@@ -29,7 +29,7 @@ The public version is available through the package-specific `SWITCHBANK_VERSION
 - [Runtime configuration](#runtime-configuration)
 - [Examples](#examples)
 - [Testing](#testing)
-- [Public API guide](#public-api-guide)
+- [API reference](#api-reference)
 - [Migration from v1.1](#migration-from-v11)
 - [Project integration guidance](#project-integration-guidance)
 - [Repository structure](#repository-structure)
@@ -122,7 +122,7 @@ This boundary is intentional. A standalone SwitchBank can be used in a toy, mach
 
 ### Arduino IDE
 
-Install the library in the Arduino Library Manager when released, or place the repository in your Arduino `libraries` directory.
+Install **SwitchBank** from Arduino Library Manager, or place the repository in your Arduino `libraries` directory.
 
 For the easiest GPIO path:
 
@@ -139,7 +139,7 @@ For custom readers or I/O expanders:
 
 ### PlatformIO
 
-Use the repository as a project dependency, or install it into the project `lib/` directory.
+Add `littlemanbuilds/SwitchBank` to `lib_deps`, use the GitHub repository as a project dependency, or install the library into the project `lib/` directory. The core and GPIO examples need no third-party libraries.
 
 The library is header-only, so there is no runtime library initialization step beyond configuring the hardware and calling `sync()`.
 
@@ -149,7 +149,7 @@ The library is header-only, so there is no runtime library initialization step b
 
 The library core is standard C++11-compatible code with small Arduino adapters.
 
-Historical v1.2.0 compile evidence covered the following PlatformIO targets (not rerun for 1.2.1):
+Historical v1.2.0 compile evidence covered the following PlatformIO targets (see the release checklist for current qualification):
 
 - ESP32-S3 DevKitC-1;
 - ESP32;
@@ -180,7 +180,7 @@ For the first example, connect one side of each maintained switch to GND and the
 The examples use:
 
 ```cpp
-const uint8_t DIP_PINS[3] = {35, 36, 37};
+const uint8_t DIP_PINS[3] = {4, 5, 6};
 ```
 
 With `INPUT_PULLUP`:
@@ -198,7 +198,7 @@ That is an **active-low** input.
 #include <Arduino.h>
 #include <SwitchBank_Arduino.h>
 
-const uint8_t DIP_PINS[3] = {35, 36, 37};
+const uint8_t DIP_PINS[3] = {4, 5, 6};
 
 auto dip = makeSwitchBankArduino<3>(
     DIP_PINS,
@@ -653,7 +653,7 @@ Normal runtime code should call `update()`.
 
 ### Package version macros
 
-Use `SWITCHBANK_VERSION`, `SWITCHBANK_VERSION_MAJOR`, `SWITCHBANK_VERSION_MINOR`, and `SWITCHBANK_VERSION_PATCH`. The generic `LIBRARY_VERSION*` aliases from v1.2.0 are intentionally absent from this development baseline because they are not safe in multi-library applications.
+Use `SWITCHBANK_VERSION`, `SWITCHBANK_VERSION_MAJOR`, `SWITCHBANK_VERSION_MINOR`, and `SWITCHBANK_VERSION_PATCH`. SwitchBank 1.2 removed the generic `LIBRARY_VERSION*` aliases to avoid collisions in multi-library applications.
 
 ### Main types
 
@@ -744,8 +744,6 @@ The builder still performs no dynamic allocation.
 
 ## Examples
 
-The existing four-example progression is intentionally retained.
-
 ### `01_SimpleDIP3Bit`
 
 The beginner GPIO path:
@@ -758,6 +756,8 @@ The beginner GPIO path:
 ### `02_ModeNames3Bit`
 
 Shows how the packed `0..7` value can be translated into application-specific mode names.
+
+For Examples 03 and 04, install the **Adafruit MCP23017 Arduino Library** (the example project uses 2.3.2) and its Adafruit BusIO dependency. Connect SDA and SCL to the board’s default I2C pins, share ground, and use an expander supply and I2C pull-ups compatible with the board’s logic voltage. The sketches expect address `0x20` and a switch from each of GPA0–GPA7 to ground.
 
 ### `03_PortExpander8Bit`
 
@@ -773,7 +773,9 @@ The example driver does not expose a definitive bus-error result for `readGPIOAB
 
 ## Testing
 
-The 1.2.1 validation scope is native C++11 on GNU GCC and Clang, ASan/UBSan, strict host example syntax, release contracts, and package builds for ESP32-S3, AVR Uno and megaAVR Nano Every. All four public examples are built for ESP32-S3. Additional AVR C++14 constant-expression checks exercise loop-based mask helpers with real 16-bit `unsigned int`; the public minimum remains C++11. Compilation does not validate electrical behavior, disconnect detection or physical selector transitions.
+SwitchBank 1.2.2 completed software qualification with native C++11 on GNU GCC and Clang, ASan/UBSan, release and packaging checks, and package builds for ESP32-S3, AVR Uno and megaAVR Nano Every. All four public examples compiled for ESP32-S3. An additional AVR C++14 constant-expression check exercises loop-based mask helpers with real 16-bit `unsigned int`; the public minimum remains C++11.
+
+The 1.2.2 public release follows a software-qualified policy. ESP32-S3 GPIO debounce and edges, physical selector transitions and legal states, MCP23017 coherent packed acquisition, and MCP23017 disconnect and recovery are **DEFERRED / NOT RUN** until hardware integration. See the [release checklist](RELEASE_CHECKLIST.md#physical-integration) for the physical test scope and the remaining release checks.
 
 Testing now lives under `test/` rather than being mixed into a PlatformIO CI configuration.
 
@@ -830,7 +832,7 @@ The deterministic host suite is built with AddressSanitizer and UndefinedBehavio
 
 ### Cross-platform compile matrix
 
-Historical v1.2.0 compilation covered the following targets (not current 1.2.1 evidence):
+Historical v1.2.0 compilation covered the following targets (see the release checklist for current qualification):
 
 - `esp32-s3-devkitc-1` using Espressif 32 `6.12.0`;
 - `esp32dev` using Espressif 32 `6.12.0`;
@@ -846,7 +848,7 @@ All four public examples were also compiled locally for `esp32-s3-devkitc-1`.
 
 The RP2040 toolchain emitted warnings from its bundled Pico SDK timer headers. No SwitchBank source warnings were emitted in the local PlatformIO matrix.
 
-The local release checklist distinguishes between tests actually executed locally and CI/hardware gates that still need the target environment.
+The release checklist records local software qualification, exact-commit CI and the checks deferred to hardware integration.
 
 ---
 
@@ -1049,7 +1051,7 @@ SwitchBank/
 Current version:
 
 ```text
-1.2.1
+1.2.2
 ```
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed release history.

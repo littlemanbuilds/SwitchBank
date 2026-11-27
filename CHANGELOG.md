@@ -4,6 +4,15 @@ All notable changes to SwitchBank are documented here.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-27
+
+- Restrict the PlatformIO package to the public library, examples and user documentation.
+- Add exact-commit packaging and inventory checks for all three distribution channels.
+- Use GPIO 4–6 in the beginner ESP32-S3 examples so the defaults avoid pins reserved by octal flash or PSRAM.
+- Pin CI to Python 3.11 for the existing PlatformIO toolchain.
+
+This release includes the 16-bit mask correction prepared in 1.2.1. The release date records candidate preparation.
+
 ## [1.2.1] - 2026-09-08
 
 ### Fixed

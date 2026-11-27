@@ -6,7 +6,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 version_h="$(sed -n 's/^#define SWITCHBANK_VERSION "\([^"]*\)"/\1/p' "$ROOT/src/SwitchBank.h")"
 version_props="$(sed -n 's/^version=//p' "$ROOT/library.properties")"
-version_json="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/library.json")"
+version_json="$(python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/library.json")"
 [[ "$version_h" == "$version_props" && "$version_h" == "$version_json" ]] || fail "version metadata is inconsistent"
 ! grep -Eq '^#define[[:space:]]+LIBRARY_VERSION([_[:space:]])' "$ROOT/src/SwitchBank.h" || fail "generic LIBRARY_VERSION aliases must remain absent"
 
@@ -69,7 +69,7 @@ if "$tracked_debris"; then
   fail "tracked package debris found in release content"
 fi
 
-python3 - "$ROOT" "$version_h" <<'PYCODE'
+python3 -B -c '
 import pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 version = sys.argv[2]
@@ -84,6 +84,6 @@ assert ".".join(numeric) == version, "numeric version declarations disagree"
 changelog = (root / "CHANGELOG.md").read_text()
 assert re.search(r"^## \[" + re.escape(version) + r"\] - \d{4}-\d{2}-\d{2}$", changelog, re.M), "missing current changelog"
 assert "## [1.2.0] - 2026-09-01" in changelog and "## [1.1.0]" in changelog, "missing release history"
-PYCODE
+' "$ROOT" "$version_h"
 
 echo "PASS: release contracts"

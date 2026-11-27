@@ -1,6 +1,8 @@
 # SwitchBank release checklist
 
-SwitchBank 1.2.1 preparation, 2026-09-08. Use this checklist before publication.
+SwitchBank 1.2.2 candidate prepared 2026-11-27. Use this checklist before publication.
+
+SwitchBank 1.2.2 completed software qualification at the engineering candidate stage. The library headers differ from the accepted 1.2.1 baseline only in the package version macros, preserving the 16-bit mask-width correction. The two beginner GPIO examples use GPIO 4–6 and were compiled for ESP32-S3 during 1.2.2 qualification.
 
 ## Source and API
 
@@ -33,17 +35,25 @@ SwitchBank 1.2.1 preparation, 2026-09-08. Use this checklist before publication.
 - [x] PlatformIO package builds for ESP32-S3, AVR Uno and megaAVR Nano Every.
 - [x] PlatformIO compile of all public examples for ESP32-S3.
 - [x] Release-contract/package-hygiene checks.
-- [ ] Final release ZIP unpacked and retested from a clean directory.
 - [x] Target builds use a sanitized library package.
 - [x] AVR C++14 mask assertions use real 16-bit unsigned int; C++11 package builds retained.
 
-## CI / hardware gates
+## 1.2.2 release gates
 
-- [ ] GitHub Actions portable PlatformIO matrix completed remotely.
-- [ ] Broader platform matrix rerun for 1.2.1 (prior 1.2.0 evidence retained).
-- [ ] Physical selector transitions and legal-state behavior.
-- [ ] Physical ESP32-S3 GPIO debounce/edge smoke test.
-- [ ] Physical MCP23017 coherent packed-read test.
-- [ ] Physical MCP23017 disconnect/recovery validation with a driver capable of reporting acquisition failure.
+- [ ] Confirm GitHub Actions on the exact release commit.
+- [ ] Check the GitHub, PlatformIO and Arduino inventories and exact commit archives.
+- [ ] Unpack and check the final release ZIP from a clean directory.
+- [ ] Verify the actual public downloads after publication.
 
-Hardware and remote CI gates must not be reported as passed until they have actually run.
+The exact 1.2.1 commit passed the historical GitHub Actions portable PlatformIO matrix ([run 34374074794](https://github.com/littlemanbuilds/SwitchBank/actions/runs/34374074794)).
+
+## Physical integration
+
+The SwitchBank owner approved a software-qualified public release for 1.2.2. Electrical behavior depends on the installed board, switches, wiring and expander driver, so the hardware integration owner is responsible for the following checks on the actual installation.
+
+| Physical check | Disposition |
+| --- | --- |
+| ESP32-S3 GPIO debounce and edge behavior | DEFERRED / NOT RUN |
+| Physical selector transitions and legal-state behavior | DEFERRED / NOT RUN |
+| MCP23017 coherent packed acquisition | DEFERRED / NOT RUN |
+| MCP23017 disconnect and recovery with a driver that reports acquisition failure | DEFERRED / NOT RUN |

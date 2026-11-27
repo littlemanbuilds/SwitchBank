@@ -54,6 +54,12 @@ bash test/check_release_contracts.sh
 
 This checks version consistency, required README structure, package hygiene, example presence, source documentation headers, and removal of obsolete CI artifacts.
 
+## Public distribution
+
+`test/public_files.json` lists the complete GitHub source tree and the PlatformIO and Arduino projections. Keep the PlatformIO list synchronized with `library.json`'s `export.include`.
+
+Run `python3 -B test/test_release_packaging.py` with PlatformIO Core 6.1.19 to test the public inventories, archive member checks and commit/index boundaries using a temporary repository. Build references from a full commit SHA with `python3 -B test/package_release.py COMMIT NEW_OUTPUT_DIRECTORY`. The directory must be outside the checkout. The PlatformIO tarball produced here is the raw packer output for normalization and release verification.
+
 ## Cross-platform CI
 
 GitHub Actions installs PlatformIO and compiles `test/portable_compile/portable_compile.ino` for the configured MCU families. Public examples are compiled separately against ESP32-S3.

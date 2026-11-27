@@ -14,10 +14,10 @@
 #include <Arduino.h>
 
 // ESP32-S3 example pins. Change these to suitable GPIOs for your board.
-// We have 3 DIP switches on GPIO 35, 36, 37.
+// We have 3 DIP switches on GPIO 4, 5, 6.
 // One side of each switch goes to GND, the other side to the pin.
 // With INPUT_PULLUP, the pin reads HIGH when 'off' and LOW when 'on'.
-const uint8_t DIP_PINS[3] = {35, 36, 37};
+const uint8_t DIP_PINS[3] = {4, 5, 6};
 
 // Create a 3-bit switch bank with:
 // - 20 ms debounce window.
